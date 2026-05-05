@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Events\LevelUp;
 use App\Events\NodeDepleted;
+use App\Events\NodeSpawned;
 use App\Events\NodeUpdated;
 use App\Events\StaminaUpdated;
 use App\Models\Inventory;
+use App\Models\Island;
 use App\Models\Item;
 use App\Models\LevelDefinition;
 use App\Models\MiningNode;
@@ -17,10 +19,10 @@ use Carbon\CarbonImmutable;
 
 class MiningService
 {
-    private const STAMINA_REGEN_PER_SECOND = 10;
+    /** 2 pts/sec → 50 seconds for a full 0→100 recharge */
+    private const STAMINA_REGEN_PER_SECOND = 2;
 
-    private const STAMINA_COST_PER_HIT = 8;
-
+    /** Each hit drains stamina to 0 (Total Drain mechanic) */
     private const STAMINA_MINIMUM_THRESHOLD = 5;
 
     /**
@@ -56,7 +58,8 @@ class MiningService
         $pickaxePower = $equippedPickaxe?->mining_dmg_bonus ?? 5;
         $damage = max(1, (int) round(($pickaxePower + $stats->mining_speed) * $multiplier));
 
-        $newStamina = max(0.0, $effectiveStamina - self::STAMINA_COST_PER_HIT);
+        // Total Drain: every hit costs all remaining stamina; regen restarts from 0.
+        $newStamina = 0.0;
         $staminaUpdatedAt = CarbonImmutable::now();
 
         $stats->stamina = $newStamina;
@@ -135,12 +138,8 @@ class MiningService
 
     private function staminaMultiplier(float $stamina): float
     {
-        return match (true) {
-            $stamina >= 80 => 1.00,
-            $stamina >= 50 => 0.75,
-            $stamina >= 20 => 0.50,
-            default => 0.25,
-        };
+        // 100% stamina → full damage; below 20% → 0.25x (Weak Hit)
+        return $stamina >= 20 ? 1.00 : 0.25;
     }
 
     /**
@@ -191,5 +190,44 @@ class MiningService
             ->first();
 
         return $levelDef?->level ?? 1;
+    }
+
+    /**
+     * Ensure an island has at least $minimumPerType active nodes for each of its configured node types.
+     * Returns the number of nodes spawned.
+     */
+    public function spawnNodesForIsland(Island $island, int $minimumPerType = 1): int
+    {
+        $nodeTypes = $island->nodeTypes;
+        $spawned = 0;
+
+        foreach ($nodeTypes as $nodeType) {
+            $activeCount = MiningNode::where('island_id', $island->id)
+                ->where('node_type_id', $nodeType->id)
+                ->where(function ($query): void {
+                    $query->whereNull('respawns_at')->orWhere('respawns_at', '<=', now());
+                })
+                ->count();
+
+            $needed = max(0, $minimumPerType - $activeCount);
+
+            for ($i = 0; $i < $needed; $i++) {
+                $newNode = MiningNode::create([
+                    'island_id'    => $island->id,
+                    'node_type_id' => $nodeType->id,
+                    'max_hp'       => $nodeType->base_hp,
+                    'current_hp'   => $nodeType->base_hp,
+                    'respawns_at'  => null,
+                ]);
+
+                // Broadcast to presence channel so connected clients hot-swap
+                // the respawning placeholder with the fresh node.
+                $newNode->load('nodeType');
+                broadcast(new NodeSpawned($newNode));
+                $spawned++;
+            }
+        }
+
+        return $spawned;
     }
 }

@@ -4,31 +4,74 @@ import { ref } from 'vue';
 interface Pickaxe {
     id: number;
     name: string;
-    power: number;
+    mining_dmg_bonus: number;
+    luck_bonus: number;
 }
 
 export const usePlayerStore = defineStore('player', () => {
+    const userId = ref<number | null>(null);
+    const level = ref<number>(1);
+    const experience = ref<number>(0);
+    const nextLevelExp = ref<number>(100);
     const hp = ref<number>(100);
     const maxHp = ref<number>(100);
-    const exp = ref<number>(0);
-    const level = ref<number>(1);
+    /** Server-side stamina value captured at staminaLastUpdatedAt */
+    const stamina = ref<number>(100);
+    const staminaLastUpdatedAt = ref<Date | null>(null);
     const currentPickaxe = ref<Pickaxe | null>(null);
 
-    function setHp(value: number): void {
-        hp.value = Math.max(0, Math.min(maxHp.value, value));
+    function initialize(
+        player: { id: number; level: number; experience: number; next_level_exp: number },
+        stats: { stamina: number; stamina_last_updated_at: string; hp: number },
+        pickaxe?: Pickaxe | null,
+    ): void {
+        userId.value = player.id;
+        level.value = player.level;
+        experience.value = player.experience;
+        nextLevelExp.value = player.next_level_exp;
+        hp.value = stats.hp;
+        stamina.value = stats.stamina;
+        staminaLastUpdatedAt.value = new Date(stats.stamina_last_updated_at);
+        currentPickaxe.value = pickaxe ?? null;
+    }
+
+    function applyStaminaUpdate(newStamina: number, lastUpdatedAt: string): void {
+        stamina.value = newStamina;
+        staminaLastUpdatedAt.value = new Date(lastUpdatedAt);
+    }
+
+    function applyLevelUp(newLevel: number): void {
+        level.value = newLevel;
     }
 
     function addExp(amount: number): void {
-        exp.value += amount;
+        experience.value += amount;
     }
 
-    function levelUp(newLevel: number): void {
-        level.value = newLevel;
+    function setHp(value: number): void {
+        hp.value = Math.max(0, Math.min(maxHp.value, value));
     }
 
     function equipPickaxe(pickaxe: Pickaxe): void {
         currentPickaxe.value = pickaxe;
     }
 
-    return { hp, maxHp, exp, level, currentPickaxe, setHp, addExp, levelUp, equipPickaxe };
+    return {
+        userId,
+        level,
+        experience,
+        nextLevelExp,
+        hp,
+        maxHp,
+        stamina,
+        staminaLastUpdatedAt,
+        currentPickaxe,
+        initialize,
+        applyStaminaUpdate,
+        applyLevelUp,
+        addExp,
+        setHp,
+        equipPickaxe,
+    };
 });
+

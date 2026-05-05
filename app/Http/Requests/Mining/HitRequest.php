@@ -19,7 +19,6 @@ class HitRequest extends FormRequest
     {
         return [
             'node_id' => ['required', 'integer', 'exists:mining_nodes,id'],
-            'stamina_percent' => ['required', 'numeric', 'min:0', 'max:100'],
         ];
     }
 }

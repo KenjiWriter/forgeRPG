@@ -1,8 +1,7 @@
 <?php
 
-use App\Http\Controllers\Mining\MiningController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth')->group(function () {
-    Route::post('mining/hit', [MiningController::class, 'hit'])->name('mining.hit');
-});
+// API routes are reserved for future external/token-based consumers.
+// The mining hit endpoint has been moved to routes/web.php to use
+// session-based auth (Inertia monolith pattern).

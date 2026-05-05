@@ -3,10 +3,12 @@
 namespace App\Observers;
 
 use App\Models\EquipmentSlot;
+use App\Models\Island;
 use App\Models\Item;
 use App\Models\Pickaxe;
 use App\Models\PlayerStat;
 use App\Models\User;
+use App\Services\MiningService;
 
 class UserObserver
 {
@@ -44,6 +46,16 @@ class UserObserver
                 'item_id' => $slot === 'pickaxe' ? $starterItem->id : null,
                 'updated_at' => now(),
             ]);
+        }
+
+        $startingIsland = Island::where('name', "Stonewake's Cross")->first()
+            ?? Island::where('min_level', 1)->orderBy('id')->first();
+
+        if ($startingIsland) {
+            $user->current_island_id = $startingIsland->id;
+            $user->saveQuietly();
+
+            app(MiningService::class)->spawnNodesForIsland($startingIsland);
         }
     }
 }

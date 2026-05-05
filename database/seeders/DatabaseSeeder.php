@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             OreTypeSeeder::class,
             PickaxeSeeder::class,
             NodeSourceSeeder::class,
+            MiningNodeSeeder::class,
         ]);
     }
 }
