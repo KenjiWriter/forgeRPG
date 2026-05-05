@@ -194,8 +194,6 @@ No relationships. Config/seed table only.
    - The `pickaxe` slot's `item_id` is set to the newly created Item's id
    - All other slots have `item_id = null`
 
-> **Dependency**: The observer reads from the `pickaxes` table. The `PickaxeSeeder` must run before the first user is created in production. In tests, use factories that bypass the observer or ensure seeder is called.
-
 ---
 
 ## Pivot Tables
@@ -204,3 +202,75 @@ No relationships. Config/seed table only.
 |---|---|---|---|
 | `node_type_ore_sources` | `node_type_id` | `ore_type_id` | Which ores are eligible to drop from a node type |
 | `location_node_types` | `island_id` | `node_type_id` | Which node types can spawn on an island |
+
+---
+
+## Core Services
+
+### `MiningService` (`app/Services/MiningService.php`)
+
+The main orchestrator for all server-side mining logic. Called by `MiningController@hit`.
+
+| Constant | Value | Notes |
+|---|---|---|
+| `STAMINA_REGEN_PER_SECOND` | `10` | Pts regenerated per elapsed second |
+| `STAMINA_COST_PER_HIT` | `8` | Stamina consumed per click |
+| `STAMINA_MINIMUM_THRESHOLD` | `5` | Below this → 422, click rejected |
+
+#### Stamina Rehydration
+
+Stamina is persisted lazily. On every hit, the current value is computed from the stored value and the time elapsed since the last update:
+
+```
+effective_stamina = MIN(100, stored_stamina + elapsed_seconds * 10)
+where elapsed_seconds = now()->timestamp - stamina_last_updated_at->timestamp
+```
+
+The result is used for multiplier calculation then immediately persisted back with a fresh `stamina_last_updated_at = now()`.
+
+#### Stamina → Damage Multiplier (4-tier)
+
+| Stamina range | Multiplier |
+|---|---|
+| ≥ 80 | `1.00` |
+| 50–79 | `0.75` |
+| 20–49 | `0.50` |
+| < 20 | `0.25` |
+
+#### Damage Formula
+
+```
+damage = MAX(1, ROUND((pickaxe.mining_dmg_bonus + player_stats.mining_speed) * stamina_multiplier))
+```
+
+Falls back to `mining_dmg_bonus = 5` when no pickaxe item is equipped.
+
+#### Loot Roll
+
+Executed only when `current_hp` reaches 0. For each eligible ore on the node type:
+
+```
+adjusted_chance = MAX(1, FLOOR(ore.base_chance / (1 + luck_boost / 100)))
+if random_int(1, adjusted_chance) === 1 → ore is awarded
+```
+
+Each awarded ore is upserted into `inventories` (INCREMENT quantity if row exists, INSERT with quantity=1 otherwise).
+
+#### Level-Up Detection
+
+After EXP is added: `LevelDefinition::where('exp_required', '<=', new_exp)->orderBy('level', 'desc')->first()` determines the new level. If `new_level > previous_level`, the user row is updated and `LevelUp` is broadcast.
+
+---
+
+## Broadcast Events (Laravel Reverb)
+
+> **Note**: `laravel/reverb` is not yet installed. Run `composer require laravel/reverb` and publish its config. All four events implement `ShouldBroadcast` and will broadcast automatically once Reverb is configured.
+
+| Event | Class | Channel | Channel Type | Payload |
+|---|---|---|---|---|
+| `NodeUpdated` | `App\Events\NodeUpdated` | `island.{island_id}.nodes` | Presence | `{ node_id, current_hp }` |
+| `NodeDepleted` | `App\Events\NodeDepleted` | `island.{island_id}.nodes` | Presence | `{ node_id, respawns_at (ISO 8601), next_node_type_slug }` |
+| `StaminaUpdated` | `App\Events\StaminaUpdated` | `user.{user_id}` | Private | `{ stamina, stamina_last_updated_at (ISO 8601) }` |
+| `LevelUp` | `App\Events\LevelUp` | `user.{user_id}` | Private | `{ new_level, unlocked_island_id (nullable) }` |
+
+Island node channels use **Presence** so the frontend can show which players are on the island. Stamina and level-up channels are **Private** (per-user only).

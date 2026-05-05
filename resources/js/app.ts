@@ -4,6 +4,11 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
+import '@/echo';
+import { createApp, h } from 'vue';
+import { createPinia } from 'pinia';
+
+const pinia = createPinia();
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -20,6 +25,12 @@ createInertiaApp({
             default:
                 return AppLayout;
         }
+    },
+    setup({ el, App, props, plugin }) {
+        createApp({ render: () => h(App, props) })
+            .use(plugin)
+            .use(pinia)
+            .mount(el);
     },
     progress: {
         color: '#4B5563',

@@ -18,7 +18,7 @@
 
 ## Authentication
 
-All game API routes sit behind `auth:sanctum` (or the default session guard — to be confirmed during implementation). Unauthenticated requests return `401 Unauthorized`.
+All game API routes sit behind the `auth` session guard (standard Laravel web auth). Unauthenticated requests return `401 Unauthorized`.
 
 ---
 
@@ -98,6 +98,60 @@ Processes a single mining click against a node. The server re-computes stamina a
 | Response Field | Type | Notes |
 |---|---|---|
 | `damage_dealt` | integer | Final Mining DMG applied (after stamina multiplier) |
+| `node_hp_remaining` | integer | `current_hp` after this hit (0 if destroyed) |
+| `is_destroyed` | boolean | `true` when `current_hp` reaches 0 |
+| `stamina_remaining` | number | Effective stamina after deducting 8-pt cost |
+| `loot` | array\|null | `null` while node alive; array of `{ ore_id, name }` on destruction |
+| `exp_gained` | integer | EXP awarded this hit (0 unless node destroyed) |
+| `new_player_exp` | integer | Player's cumulative EXP after this hit |
+| `level_up` | boolean | `true` if this hit pushed the player to a new level |
+
+#### Actual Response Shape — Node Still Alive
+`200 OK`
+```json
+{
+    "damage_dealt": 15,
+    "node_hp_remaining": 285,
+    "is_destroyed": false,
+    "stamina_remaining": 92,
+    "loot": null,
+    "exp_gained": 0,
+    "new_player_exp": 0,
+    "level_up": false
+}
+```
+
+#### Actual Response Shape — Node Destroyed
+`200 OK`
+```json
+{
+    "damage_dealt": 15,
+    "node_hp_remaining": 0,
+    "is_destroyed": true,
+    "stamina_remaining": 84,
+    "loot": [
+        { "ore_id": 3, "name": "Copper" },
+        { "ore_id": 8, "name": "Mushroomite" }
+    ],
+    "exp_gained": 30,
+    "new_player_exp": 150,
+    "level_up": false
+}
+```
+
+#### Error Responses
+
+| Status | Condition |
+|---|---|
+| `401 Unauthorized` | Not authenticated |
+| `422 Unprocessable` | `node_id` missing/invalid, `stamina_percent` out of range, node is respawning, or stamina < 5 threshold |
+| `404 Not Found` | `node_id` does not exist |
+
+#### Implementation Notes
+- Damage formula: `MAX(1, ROUND((pickaxe.mining_dmg_bonus + player_stats.mining_speed) * stamina_multiplier))`
+- Stamina is always rehydrated server-side; `stamina_percent` in the payload is accepted but not used in calculations.
+- Inventory upsert: increments `quantity` if an ore row already exists for that user; inserts a new row with `quantity=1` otherwise.
+- Reverb broadcast fires synchronously in the same request cycle (queued once Reverb queue worker is running).
 | `node_current_hp` | integer | Node HP remaining after this hit |
 | `loot_dropped` | array \| null | Ores awarded. `null` if node not destroyed |
 | `respawns_at` | ISO 8601 string \| null | Set when node is destroyed; null otherwise |

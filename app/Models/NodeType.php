@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['slug', 'name', 'tier', 'base_hp', 'respawn_minutes'])]
 class NodeType extends Model
 {
+    use HasFactory;
+
     public function oreTypes(): BelongsToMany
     {
         return $this->belongsToMany(OreType::class, 'node_type_ore_sources');

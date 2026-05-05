@@ -566,19 +566,28 @@ $pickaxe = $user->equipmentSlots()
 - [x] Seed 7 pickaxe types from DATA_REFERENCE.md
 - [x] UserObserver: auto-create PlayerStat + equip Wooden Pickaxe on user creation
 
-### ⏳ Mining Engine & API Implementation [NEXT]
-- [ ] Implement `POST /api/mining/hit` endpoint (see API_CONTRACT.md)
-  - Validate node ownership/island membership
-  - Server-side stamina rehydration (last_value + elapsed * regen_rate)
-  - Compute Stamina Multiplier and Final Mining DMG
+### ✅ Mining Engine & API Implementation [COMPLETED — 2026-05-05]
+- [x] Implement `POST /api/mining/hit` endpoint (see API_CONTRACT.md)
+  - Server-side stamina rehydration (last_value + elapsed_seconds * 10 pts/sec)
+  - 4-tier Stamina Multiplier (≥80→1.00, 50–79→0.75, 20–49→0.50, <20→0.25)
+  - Compute Final Mining DMG: `MAX(1, ROUND((pickaxe.mining_dmg_bonus + mining_speed) * multiplier))`
   - Deduct DMG from `mining_nodes.current_hp` (floor 0)
-  - Deduct stamina cost (default: 8 pts per click)
+  - Deduct 8 stamina pts per click (clamped to 0)
   - Persist node HP + stamina state
-  - Broadcast `NodeUpdated` and `StaminaUpdated` via Reverb
-  - On destruction (HP = 0): run `rollNodeLoot()`, award EXP, set `respawns_at`, broadcast `NodeDepleted`
-- [ ] Implement `GET /api/islands/{island}/nodes` — load active nodes for an island view
-- [ ] Implement Reverb broadcast events: `StaminaUpdated`, `NodeUpdated`, `NodeDepleted`, `NodeRespawned`, `LevelUp`
-- [ ] Implement scheduled job: respawn mining nodes when `respawns_at` is past
+  - Broadcast `NodeUpdated` (presence) and `StaminaUpdated` (private) via Reverb
+  - On destruction (HP = 0): run `rollNodeLoot()`, award EXP (`tier * 10`), handle level-up, set `respawns_at`, broadcast `NodeDepleted` and optionally `LevelUp`
+- [x] Implement Reverb broadcast events: `NodeUpdated`, `NodeDepleted`, `StaminaUpdated`, `LevelUp`
+- [x] 10 feature tests covering all code paths (`tests/Feature/Mining/MiningHitTest.php`)
+
+### ⏳ Reverb Installation & Configuration [NEXT]
+- [ ] `composer require laravel/reverb`
+- [ ] `php artisan reverb:install` — publishes `config/reverb.php`
+- [ ] Set `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` in `.env`
+- [ ] Configure `BROADCAST_DRIVER=reverb` in `.env`
+- [ ] Update `bootstrap/app.php` to register the `BroadcastServiceProvider` if needed
+- [ ] Register `routes/channels.php` — add Presence auth for `island.{island_id}.nodes` and Private auth for `user.{id}`
+- [ ] Start Reverb server: `php artisan reverb:start`
+- [ ] Confirm broadcast events fire correctly end-to-end
 
 ### Backend (Remaining)
 - [ ] Implement `ForgeEngine` service class (Forge Signature hash + stat calculation)

@@ -3,12 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['island_id', 'node_type_id', 'max_hp', 'current_hp', 'respawns_at'])]
 class MiningNode extends Model
 {
+    use HasFactory;
+
     protected function casts(): array
     {
         return [
