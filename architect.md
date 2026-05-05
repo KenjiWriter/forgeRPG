@@ -37,7 +37,8 @@
 - Active click-driven mini-game gated by a **stamina bar** (max 100 pts, regenerates 10 pts/sec).
 - Each click deals `Final Mining DMG = (Pickaxe.mining_dmg_bonus + Player.mining_speed_stat) * Stamina Multiplier`.
 - Stamina multiplier: ≥80% → 1.00×, 50–79% → 0.75×, 20–49% → 0.50×, <20% → 0.25×.
-- Mining nodes have `current_hp` / `max_hp`. Depletion yields raw ore + EXP, then node enters respawn cooldown.
+- Mining nodes have `current_hp` / `max_hp`. **Loot drops ONLY when `current_hp` reaches 0 (node destroyed)** — not per click.
+- On destruction: server runs a Loot Roll for each ore eligible from that node type (see Mining Loot Drop Logic).
 - Node HP and stamina are broadcast in real-time via **Laravel Reverb**.
 
 ### Forging
@@ -122,24 +123,76 @@ Holds all player-owned ore stacks, items, and runes not currently equipped.
 | Column | Type | Notes |
 |--------|------|-------|
 | id | bigint | PK |
-| name | string | e.g., "Ironite", "Voidstone" |
-| rarity | enum | common, uncommon, rare, epic, legendary |
+| name | string | e.g., "Stone", "Mythril" |
+| rarity | enum | common, uncommon, rare, epic, legendary, **mythical** |
+| base_chance | unsignedSmallInteger | Denominator X of "1 in X" drop probability |
+| multiplier | decimal(4,2) | Forge stat multiplier (e.g., 1.65) |
+| price | unsignedInteger | Sell price in cents (e.g., $3.75 → 375) |
 | elemental_affinity | enum | fire, water, earth, void, neutral |
-| base_attack | unsignedSmallInteger | Contributes to forged item attack |
-| base_defense | unsignedSmallInteger | Contributes to forged item defense |
+| base_attack | unsignedSmallInteger | Contributes to forged item attack stat |
+| base_defense | unsignedSmallInteger | Contributes to forged item defense stat |
 | base_hp | unsignedSmallInteger | Contributes to forged item HP bonus |
-| base_value | unsignedInteger | Economy reference price |
+
+### `node_types`
+Lookup/config table for the types of mining nodes that exist in the game.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | bigint | PK |
+| slug | string | Unique machine name: `pebble`, `rock`, `boulder`, `basalt_rock`, `basalt_core`, `basalt_vein`, `volcanic_rock`, `icy_pebble`, `icy_rock` |
+| name | string | Display name |
+| tier | unsignedTinyInteger | 1–6; higher tier = harder nodes, rarer ores |
+| base_hp | unsignedInteger | Max HP for nodes of this type (seeded from DATA_REFERENCE.md) |
+| respawn_minutes | unsignedSmallInteger | Minutes before a depleted node respawns |
+
+### `node_type_ore_sources`
+Pivot: defines which ores are **eligible** to drop from each node type when destroyed.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| node_type_id | bigint | FK → node_types |
+| ore_type_id | bigint | FK → ore_types |
+
+Unique constraint: `(node_type_id, ore_type_id)`. Seeded from `DATA_REFERENCE.md → Node Type → Ore Drop Sources`.
+
+### `location_node_types`
+Pivot: defines which node types can spawn at each island/location.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| island_id | bigint | FK → islands |
+| node_type_id | bigint | FK → node_types |
+
+Unique constraint: `(island_id, node_type_id)`. Seeded from `DATA_REFERENCE.md → Locations & Caves`.
 
 ### `mining_nodes`
+Instances of nodes placed on an island. A node has one type; when destroyed it yields ores from the node type's eligible drop pool.
+
 | Column | Type | Notes |
 |--------|------|-------|
 | id | bigint | PK |
 | island_id | bigint | FK → islands |
-| ore_type_id | bigint | FK → ore_types |
-| max_hp | unsignedInteger | Full health of the node |
+| node_type_id | bigint | FK → node_types |
+| max_hp | unsignedInteger | Copied from node_types.base_hp at spawn time |
 | current_hp | unsignedInteger | Depleted by player clicks; broadcast via Reverb |
-| respawns_at | timestamp | Nullable; set on node depletion |
+| respawns_at | timestamp | Nullable; set when current_hp reaches 0 |
 | created_at / updated_at | timestamps | |
+
+> **Note**: `ore_type_id` has been removed. A node does not drop a single ore; it rolls against all eligible ores for its `node_type_id` via `node_type_ore_sources`.
+
+### `pickaxes`
+Shop catalog of purchasable pickaxe types. Purchasing creates an `items` row with `slot_type = pickaxe` and stats sourced from this record.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | bigint | PK |
+| name | string | e.g., "Iron Pickaxe" |
+| price | unsignedInteger | Purchase price in cents |
+| power | unsignedSmallInteger | Maps to `items.mining_dmg_bonus` |
+| luck_boost | unsignedTinyInteger | Maps to `items.luck_bonus`; integer %, e.g., 10 = 10% |
+| speed_modifier | decimal(4,2) | Maps to `items.mining_speed_bonus`; e.g., 1.20 = 20% faster |
+| slots | unsignedTinyInteger | Number of rune slots on the pickaxe |
+| requires_island_id | bigint | FK → islands, nullable; prevents purchase before unlock |
 
 ### `items`
 Stores forged items with all stats pre-computed at forge time.
@@ -212,6 +265,74 @@ Seeded config table for EXP thresholds per level.
 
 ---
 
+## Mining Loot Drop Logic
+
+### When Loot Triggers
+
+**Loot drops ONLY when a node's `current_hp` reaches 0.** No ore is awarded per-click. This is authoritative server logic; the client never determines loot.
+
+### Loot Roll Algorithm
+
+When a node is destroyed, the server executes the following for the destroying player:
+
+```
+function rollNodeLoot(node, player):
+
+  luck_boost     = player.equipped_pickaxe.luck_bonus    // integer %, e.g., 25
+  eligible_ores  = node.nodeType.ore_sources             // from node_type_ore_sources pivot
+  loot_awarded   = []
+
+  for each ore in eligible_ores:
+    base_chance        = ore.base_chance                 // integer denominator X of "1 in X"
+    adjusted_chance    = FLOOR(base_chance / (1 + luck_boost / 100))
+    adjusted_chance    = MAX(adjusted_chance, 1)         // floor of 1: always at least 1-in-1
+    roll               = random_int(1, adjusted_chance)  // inclusive
+
+    if roll == 1:
+      loot_awarded.append(ore)
+      INSERT INTO inventories (user_id, holdable_type='ore_type', holdable_id=ore.id, quantity=1)
+      // quantity is always 1 per successful roll in this design
+
+  exp_gained = calculateExpForNode(node.nodeType.tier)
+  UPDATE users SET experience = experience + exp_gained
+
+  return loot_awarded
+```
+
+### Luck Formula Detail
+
+```
+Adjusted Denominator = FLOOR(base_chance / (1 + luck_boost / 100))
+```
+
+| Ore | base_chance | luck_boost = 0 | luck_boost = 25 | luck_boost = 50 | luck_boost = 100 |
+|-----|------------|----------------|-----------------|-----------------|------------------|
+| Copper | 3 | 1 in 3 | 1 in 2 | 1 in 2 | 1 in 1 |
+| Mushroomite | 22 | 1 in 22 | 1 in 17 | 1 in 14 | 1 in 11 |
+| Diamond | 192 | 1 in 192 | 1 in 153 | 1 in 128 | 1 in 96 |
+| Magmaite | 3,003 | 1 in 3,003 | 1 in 2,402 | 1 in 2,002 | 1 in 1,501 |
+
+> **Security rule**: `luck_boost` is always read from the server-side equipped pickaxe record. The client never sends a luck value.
+
+### EXP Award on Destruction
+
+EXP is awarded per node destroyed, not per ore dropped.
+
+```
+Base Node EXP = node_types.tier * 10   (e.g., tier 3 Boulder = 30 EXP)
+```
+
+> **⚠️ PLACEHOLDER** — EXP values need balancing against `level_definitions` thresholds.
+
+### Next Node Spawn
+
+After loot is resolved:
+1. Set `mining_nodes.respawns_at = NOW() + node_types.respawn_minutes`
+2. Broadcast `NodeDepleted { node_id, respawns_at, next_node_type_slug }` via Reverb.
+3. `next_node_type_slug` is always the **same type** as the destroyed node (nodes respawn as the same type). Variation is a future feature.
+
+---
+
 ## Forge Signature & Item Stat Calculation
 
 ### Forge Signature
@@ -274,22 +395,27 @@ Player clicks a Mining Node
   → Client sends POST /mine { node_id }
   → Server:
     1. Validate: player is on correct island, node current_hp > 0
-    2. Read player stamina: stamina = last_stamina - elapsed_seconds * regen_rate (clamped 0–100)
-    3. Reject click if stamina < minimum threshold (configurable, default 5)
-    4. Compute Stamina Multiplier from stamina level
-    5. Compute Final Mining DMG
-    6. Deduct Final Mining DMG from node.current_hp (floor 0)
-    7. Deduct stamina cost (default: 8 pts per click)
-    8. Persist node.current_hp, player.stamina, player.stamina_last_updated_at
-    9. Broadcast via Reverb: NodeUpdated { node_id, current_hp }
-    10. Broadcast via Reverb: StaminaUpdated { user_id, stamina }
-    11. If node.current_hp == 0:
-          → Roll loot from ore_type.rarity + player luck_bonus
-          → Insert rows into inventories
-          → Award EXP → check level up → update users.experience / level
-          → Set node.respawns_at = now() + respawn_cooldown
-          → Broadcast: NodeDepleted { node_id, respawns_at }
-  → Client receives response { dmg_dealt, stamina_remaining, loot? }
+    2. Validate: node_type is a mining type (not an enemy-source node)
+    3. Read player stamina: stamina = last_stamina + elapsed_seconds * regen_rate (clamped 0–100)
+    4. Reject click if stamina < minimum threshold (configurable, default 5)
+    5. Compute Stamina Multiplier from current stamina level
+    6. Compute Final Mining DMG = (pickaxe.power + player_stats.mining_speed) * Stamina Multiplier
+    7. Deduct Final Mining DMG from node.current_hp (floor 0)
+    8. Deduct stamina cost (default: 8 pts per click)
+    9. Persist node.current_hp, player.stamina, player.stamina_last_updated_at
+    10. Broadcast via Reverb: NodeUpdated { node_id, current_hp }
+    11. Broadcast via Reverb: StaminaUpdated { user_id, stamina }
+    12. IF node.current_hp == 0:  ← LOOT ONLY HERE
+          a. Load eligible ores: node_type_ore_sources WHERE node_type_id = node.node_type_id
+          b. Load player luck_boost from equipped pickaxe
+          c. Run rollNodeLoot(node, player) — see Mining Loot Drop Logic
+          d. For each dropped ore: INSERT/INCREMENT inventories row
+          e. Award EXP (tier * 10 base) → check level threshold → update users.experience / level
+          f. Broadcast LevelUp if threshold crossed
+          g. Set node.respawns_at = NOW() + node_types.respawn_minutes
+          h. Broadcast: NodeDepleted { node_id, respawns_at, next_node_type_slug: node.nodeType.slug }
+  → Client receives response:
+      { dmg_dealt, stamina_remaining, node_destroyed: bool, loot: [{ ore_id, name }] | null }
 ```
 
 ### Forging Session
@@ -372,7 +498,11 @@ All island node channels use **Presence** so the frontend can show which players
 | **Stamina Multiplier** | A factor (0.25–1.00) applied to Mining DMG based on current stamina level. Penalises rapid clicking that drains stamina. |
 | **Mining DMG** | Damage dealt to a Mining Node per click. Formula: `(Pickaxe.mining_dmg_bonus + Player.mining_speed_stat) * Stamina Multiplier`. |
 | **Node HP** | The health pool of a Mining Node (`current_hp` / `max_hp`). Depleted by Mining DMG. When 0, the node yields loot and enters respawn cooldown. Broadcast via Reverb. |
-| **Rarity Tier** | An ordered enum: `common < uncommon < rare < epic < legendary`. Affects node HP, ore base stats, drop rates, and forge stat multipliers. |
+| **Rarity Tier** | An ordered enum: `common < uncommon < rare < epic < legendary < mythical`. Affects node HP, ore base stats, base_chance, and forge stat multipliers. See DATA_REFERENCE.md → Rarity Tiers for colour codes. |
+| **Node Type** | A configuration record (`node_types` table) defining a class of mining node: its slug, tier, base HP, and respawn time. Node types determine which ores are eligible to drop. Examples: `pebble`, `basalt_vein`, `volcanic_rock`. |
+| **Loot Roll** | Server-side probabilistic check run once per eligible ore when a node is destroyed. A random integer is rolled from 1 to `Adjusted Denominator`; the ore drops if the result equals 1. |
+| **Adjusted Denominator** | The effective drop-chance denominator after applying pickaxe luck: `FLOOR(base_chance / (1 + luck_boost / 100))`. Always ≥ 1. |
+| **Luck Boost** | Integer percentage on a pickaxe (`pickaxes.luck_boost`) that reduces the Adjusted Denominator, improving drop chances. A 50% luck boost on a 1-in-22 ore produces a 1-in-14 effective chance. |
 | **Forge Rune** | A rune of category `forge` applied to Stage 1 (Smelting). Consumed on use. Modifies the heat curve sweet spot width, raising achievable smelting_score ceiling. |
 | **Skill Rune** | A rune of category `skill` slotted into a player skill slot. Not consumed; can be removed and re-slotted. Unlocks or enhances player abilities. |
 | **Mining Node** | A `mining_nodes` DB record representing a specific ore deposit on an island. Has current_hp / max_hp and a respawns_at timestamp. |
@@ -391,16 +521,25 @@ All island node channels use **Presence** so the frontend can show which players
 - [ ] Create migration: extend `users` table (experience, level, current_island_id)
 - [ ] Create migration: `player_stats` table
 - [ ] Create migration: `equipment_slots` table
-- [ ] Create migration: `inventories` table (polymorphic: ore_type, item, rune)
-- [ ] Create migration: `islands` table
-- [ ] Create migration: `ore_types` table
-- [ ] Create migration: `mining_nodes` table (with current_hp, respawns_at)
+- [ ] Create migration: `inventories` table (polymorphic: ore_type, item, rune, pickaxe)
+- [ ] Create migration: `islands` table (= locations/caves)
+- [ ] Create migration: `node_types` table
+- [ ] Create migration: `node_type_ore_sources` pivot table
+- [ ] Create migration: `location_node_types` pivot table
+- [ ] Create migration: `ore_types` table (with base_chance, multiplier, price in cents, rarity incl. mythical)
+- [ ] Create migration: `mining_nodes` table (node_type_id FK, no ore_type_id)
+- [ ] Create migration: `pickaxes` table (shop catalog)
 - [ ] Create migration: `items` table (full stat columns + forge_grade + forge_signature)
 - [ ] Create migration: `forge_sessions` table
 - [ ] Create migration: `runes` table
 - [ ] Create migration: `enemies` table
 - [ ] Create migration: `level_definitions` table
-- [ ] Seed starter data (1 island, 3 ore types, 5 mining nodes, 3 enemies, 10 rune types)
+- [ ] Seed all 38 ores from DATA_REFERENCE.md
+- [ ] Seed all 9 mining node types from DATA_REFERENCE.md (with placeholder HP)
+- [ ] Seed node_type_ore_sources pivot from DATA_REFERENCE.md
+- [ ] Seed 4 islands (locations) from DATA_REFERENCE.md
+- [ ] Seed location_node_types pivot from DATA_REFERENCE.md
+- [ ] Seed 7 pickaxe types from DATA_REFERENCE.md (placeholder values)
 
 ### Backend
 - [ ] Implement `ForgeEngine` service class (Forge Signature hash + stat calculation)
@@ -440,3 +579,8 @@ All island node channels use **Presence** so the frontend can show which players
 | 2026-05-05 | Forge Signature uses quantity buckets (1–5) not raw quantities | Prevents combinatorial explosion of unique signatures while preserving meaningful input variation |
 | 2026-05-05 | `inventories` table uses polymorphic morphs | One table for ore, items, and runes avoids three separate join tables and keeps inventory queries uniform |
 | 2026-05-05 | Forge score weights: Smelting 30%, Smithing 50%, Quench 20% | Smithing (rhythm game) is the highest-skill stage and should dominate grade; smelting and quench are supporting gates |
+| 2026-05-05 | Loot drops ONLY on node destruction (HP = 0) | Prevents micro-reward spam per click; makes each mining session feel like a meaningful event with a clear reward moment |
+| 2026-05-05 | mining_nodes has no ore_type_id; uses node_type_ore_sources pivot | A single node can yield multiple ore types based on its node type; a single ore_type_id would be incorrect and would require one node per ore |
+| 2026-05-05 | Rarity enum extended to include `mythical` (above legendary) | Demonite and Darkryte have distinct presentation (red colour, extreme rarity 1/3666–1/6655) justifying a separate tier above legendary |
+| 2026-05-05 | Ore prices stored as integer cents | Avoids floating-point precision issues (e.g., $36.45 → 3645); consistent with standard e-commerce DB patterns |
+| 2026-05-05 | Pickaxes table is a shop catalog; purchasing creates an items row | Unifies pickaxe and forged-item equipment under one `items` + `equipment_slots` system; avoids separate equipment query path |

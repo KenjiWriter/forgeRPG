@@ -72,15 +72,35 @@ Final Mining DMG = Base Mining DMG * Stamina Multiplier
 
 ### 3.3 Mining Node HP
 
-- Each Mining Node has a `current_hp` and a `max_hp` (configured per ore type and rarity tier).
-- When `current_hp` reaches 0, the node yields its loot and enters a **respawn cooldown** (`respawns_at` timestamp).
+- Each Mining Node has a `current_hp` and a `max_hp` defined by its **Node Type** (Pebble, Rock, Boulder, etc.).
+- Node HP values are seeded from `DATA_REFERENCE.md → Node Types`.
 - Node HP changes are broadcast in real-time via Reverb so all players on the island see the same depletion state.
+- **Loot is NEVER awarded per click.** The only loot trigger is node destruction (see 3.4).
 
-### 3.4 Loot
+### 3.4 Loot — On Node Destruction Only
 
-On node depletion:
-- **Raw ore** (1–N units of the node's `ore_type`) based on rarity and player luck stat (TBD).
-- **EXP** proportional to ore rarity tier.
+**Loot is awarded exactly once: when `current_hp` reaches 0.** This is enforced server-side.
+
+**Drop Roll (per eligible ore)**:
+1. Load all ores eligible for the destroyed node's type from `node_type_ore_sources`.
+2. For each eligible ore, compute the **Adjusted Denominator**:
+   ```
+   Adjusted Denominator = FLOOR(ore.base_chance / (1 + pickaxe.luck_boost / 100))
+   ```
+3. Roll `random_int(1, Adjusted Denominator)`. If result == 1, the ore drops (1 unit added to inventory).
+4. Multiple ores can drop from a single node destruction; each rolls independently.
+
+**EXP Award** (on node destruction, regardless of loot drops):
+```
+EXP = node_type.tier × 10
+```
+
+**Example**: Player with `luck_boost = 50` destroys a Boulder. Aite (1 in 44) effective chance:
+```
+Adjusted = FLOOR(44 / 1.5) = 29  →  1-in-29 chance
+```
+
+> **Design Intent**: Rewarding loot at destruction (not per-click) makes each node feel like a complete event. Players are rewarded for sustained engagement rather than single lucky clicks. The luck system provides meaningful pickaxe upgrade incentive without trivialising rarity.
 
 ---
 
