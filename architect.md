@@ -515,38 +515,74 @@ All island node channels use **Presence** so the frontend can show which players
 
 ---
 
+## System Integration
+
+### Equipment & Pickaxes: Single `items` Source of Truth
+
+All equippable gear — forged armor, weapons, and pickaxes — is stored in the **`items` table**. This is intentional and authoritative.
+
+The `pickaxes` table is a **shop catalog only**: it defines purchasable pickaxe types with their stat templates (`power`, `luck_boost`, `speed_modifier`, `slots`, `price`). When a player acquires a pickaxe (purchase or new-user initialization), a concrete **`Item` row** is created with `slot_type = 'pickaxe'` and stats copied from the catalog entry.
+
+**Equipment queries always go through `items` via `equipment_slots`:**
+```php
+// Correct: resolve equipped pickaxe stats
+$pickaxe = $user->equipmentSlots()
+    ->where('slot', 'pickaxe')
+    ->with('item')
+    ->first()
+    ?->item;
+
+// Incorrect: never query user_pickaxes (table does not exist)
+```
+
+**Effective stats** are computed at query time by summing the player's `player_stats` base values with the `stat_bonus` columns across all equipped `items`. They are never stored as a derived column.
+
+---
+
 ## Current Tasks
 
-### Schema & Migrations
-- [ ] Create migration: extend `users` table (experience, level, current_island_id)
-- [ ] Create migration: `player_stats` table
-- [ ] Create migration: `equipment_slots` table
-- [ ] Create migration: `inventories` table (polymorphic: ore_type, item, rune, pickaxe)
-- [ ] Create migration: `islands` table (= locations/caves)
-- [ ] Create migration: `node_types` table
-- [ ] Create migration: `node_type_ore_sources` pivot table
-- [ ] Create migration: `location_node_types` pivot table
-- [ ] Create migration: `ore_types` table (with base_chance, multiplier, price in cents, rarity incl. mythical)
-- [ ] Create migration: `mining_nodes` table (node_type_id FK, no ore_type_id)
-- [ ] Create migration: `pickaxes` table (shop catalog)
-- [ ] Create migration: `items` table (full stat columns + forge_grade + forge_signature)
-- [ ] Create migration: `forge_sessions` table
-- [ ] Create migration: `runes` table
-- [ ] Create migration: `enemies` table
-- [ ] Create migration: `level_definitions` table
-- [ ] Seed all 38 ores from DATA_REFERENCE.md
-- [ ] Seed all 9 mining node types from DATA_REFERENCE.md (with placeholder HP)
-- [ ] Seed node_type_ore_sources pivot from DATA_REFERENCE.md
-- [ ] Seed 4 islands (locations) from DATA_REFERENCE.md
-- [ ] Seed location_node_types pivot from DATA_REFERENCE.md
-- [ ] Seed 7 pickaxe types from DATA_REFERENCE.md (placeholder values)
+### ✅ Schema & Migrations [COMPLETED — 2026-05-05]
+- [x] Create migration: extend `users` table (experience, level, current_island_id)
+- [x] Create migration: `player_stats` table
+- [x] Create migration: `equipment_slots` table
+- [x] Create migration: `inventories` table (polymorphic: ore_type, item, rune)
+- [x] Create migration: `islands` table (= locations/caves)
+- [x] Create migration: `node_types` table
+- [x] Create migration: `node_type_ore_sources` pivot table
+- [x] Create migration: `location_node_types` pivot table
+- [x] Create migration: `ore_types` table (with base_chance, multiplier, price in cents, rarity incl. mythical)
+- [x] Create migration: `mining_nodes` table (node_type_id FK, no ore_type_id)
+- [x] Create migration: `pickaxes` table (shop catalog)
+- [x] Create migration: `items` table (full stat columns + forge_grade + forge_signature)
+- [x] Create migration: `forge_sessions` table
+- [x] Create migration: `runes` table
+- [x] Create migration: `enemies` table
+- [x] Create migration: `level_definitions` table
+- [x] Seed all 38 ores from DATA_REFERENCE.md
+- [x] Seed all 9 mining node types from DATA_REFERENCE.md
+- [x] Seed node_type_ore_sources pivot from DATA_REFERENCE.md
+- [x] Seed 4 islands (locations) from DATA_REFERENCE.md
+- [x] Seed location_node_types pivot from DATA_REFERENCE.md
+- [x] Seed 7 pickaxe types from DATA_REFERENCE.md
+- [x] UserObserver: auto-create PlayerStat + equip Wooden Pickaxe on user creation
 
-### Backend
-- [ ] Implement `ForgeEngine` service class (Forge Signature hash + stat calculation)
-- [ ] Implement `POST /mine` endpoint (stamina read, DMG calc, node HP deduction, loot roll)
-- [ ] Implement `POST /forge/begin`, `/smelting`, `/smithing`, `/quench` endpoints
-- [ ] Implement Reverb broadcast events: StaminaUpdated, NodeUpdated, NodeDepleted, NodeRespawned, LevelUp
+### ⏳ Mining Engine & API Implementation [NEXT]
+- [ ] Implement `POST /api/mining/hit` endpoint (see API_CONTRACT.md)
+  - Validate node ownership/island membership
+  - Server-side stamina rehydration (last_value + elapsed * regen_rate)
+  - Compute Stamina Multiplier and Final Mining DMG
+  - Deduct DMG from `mining_nodes.current_hp` (floor 0)
+  - Deduct stamina cost (default: 8 pts per click)
+  - Persist node HP + stamina state
+  - Broadcast `NodeUpdated` and `StaminaUpdated` via Reverb
+  - On destruction (HP = 0): run `rollNodeLoot()`, award EXP, set `respawns_at`, broadcast `NodeDepleted`
+- [ ] Implement `GET /api/islands/{island}/nodes` — load active nodes for an island view
+- [ ] Implement Reverb broadcast events: `StaminaUpdated`, `NodeUpdated`, `NodeDepleted`, `NodeRespawned`, `LevelUp`
 - [ ] Implement scheduled job: respawn mining nodes when `respawns_at` is past
+
+### Backend (Remaining)
+- [ ] Implement `ForgeEngine` service class (Forge Signature hash + stat calculation)
+- [ ] Implement `POST /api/forge/begin`, `/smelting`, `/smithing`, `/quench` endpoints
 - [ ] Implement equipment endpoints: equip/unequip item
 - [ ] Implement effective-stats query (base + equipment bonuses)
 
