@@ -42,11 +42,10 @@ class DashboardController extends Controller
 
         $node = $island
             ? MiningNode::where('island_id', $island->id)
-                ->where(function ($query): void {
-                    $query->whereNull('respawns_at')->orWhere('respawns_at', '<=', now());
-                })
+                ->where('current_hp', '>', 0)
+                ->whereNull('respawns_at')
                 ->with('nodeType')
-                ->oldest()   // always assign the longest-standing active node
+                ->oldest()
                 ->first()
             : null;
 
@@ -54,9 +53,8 @@ class DashboardController extends Controller
             app(MiningService::class)->spawnNodesForIsland($island);
 
             $node = MiningNode::where('island_id', $island->id)
-                ->where(function ($query): void {
-                    $query->whereNull('respawns_at')->orWhere('respawns_at', '<=', now());
-                })
+                ->where('current_hp', '>', 0)
+                ->whereNull('respawns_at')
                 ->with('nodeType')
                 ->oldest()
                 ->first();
@@ -123,6 +121,6 @@ class DashboardController extends Controller
 
         $elapsed = max(0, now()->timestamp - $stats->stamina_last_updated_at->timestamp);
 
-        return min(100.0, (float) $stats->stamina + ($elapsed * 2));
+        return min(100.0, (float) $stats->stamina + ($elapsed * 3));
     }
 }

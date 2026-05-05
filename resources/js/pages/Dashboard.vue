@@ -91,22 +91,24 @@ const isHitting = ref(false);
 const flashNode = ref(false);
 let flyingNumberCounter = 0;
 
-// Client-side stamina display — recomputed every 100ms from server snapshot + elapsed time.
-// Rate: 2 pts/sec (50 s for full 0→100 recharge), matching MiningService::STAMINA_REGEN_PER_SECOND.
-const STAMINA_REGEN_PER_SECOND = 2;
+// Client-side stamina display — pure increment regen, no timestamp math.
+// Each 100ms tick adds 0.3 pts  → 3 pts/sec → full 0→100 in ~33 s.
+// The WS StaminaUpdated event snaps displayStamina to the server's authoritative value.
+const STAMINA_REGEN_PER_TICK = 0.3; // 3 pts/sec at 100ms intervals
 const displayStamina = ref(props.player_stats.stamina);
 useIntervalFn(() => {
-    if (!playerStore.staminaLastUpdatedAt) return;
-    const elapsedSeconds = (Date.now() - playerStore.staminaLastUpdatedAt.getTime()) / 1000;
-    displayStamina.value = Math.min(100, playerStore.stamina + elapsedSeconds * STAMINA_REGEN_PER_SECOND);
+    if (displayStamina.value < 100) {
+        displayStamina.value = Math.min(100, displayStamina.value + STAMINA_REGEN_PER_TICK);
+    }
 }, 100);
 
-// Echo: private channel — stamina and level-up events for this user
+// Echo: private channel — server snaps stamina to authoritative value after each hit.
 useEcho<{ stamina: number; stamina_last_updated_at: string }>(
     `user.${props.player.id}`,
     'StaminaUpdated',
     (payload) => {
-        playerStore.applyStaminaUpdate(payload.stamina, payload.stamina_last_updated_at);
+        // Snap to server value; interval will regen forward from here.
+        displayStamina.value = payload.stamina;
     },
 );
 
@@ -147,13 +149,15 @@ useEchoPresence<{ node_id: number; respawns_at: string }>(
     },
 );
 
-// Hot-swap: when the artisan command (or any server-side spawn) creates a new
-// node, replace the local state immediately — no page reload needed.
+// Hot-swap: replace the active node only when the player has no node to mine.
+// This prevents a bulk spawn-nodes run from resetting the current node's HP.
 useEchoPresence<{ node: typeof node.value }>(
     islandChannel,
     'NodeSpawned',
     (payload) => {
-        node.value = payload.node;
+        if (!node.value || node.value.is_respawning) {
+            node.value = payload.node;
+        }
     },
 );
 
@@ -176,12 +180,13 @@ const hpBarColor = computed(() => {
     return 'bg-red-500';
 });
 
-// Stamina below 20% triggers the "Weak Hit" visual state
-const isWeakHit = computed(() => displayStamina.value < 20);
+// Stamina power: 0–100% shown as POW label. Below 20% the bar also shakes.
+const powerPercent = computed(() => Math.round(displayStamina.value));
+const isLowPower = computed(() => displayStamina.value < 20);
 
 // Mining hit
 async function onNodeClick(event: MouseEvent): Promise<void> {
-    if (!node.value || node.value.is_respawning || isHitting.value || displayStamina.value < 5) {
+    if (!node.value || node.value.is_respawning || isHitting.value || displayStamina.value < 10) {
         return;
     }
 
@@ -191,10 +196,9 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
 
     isHitting.value = true;
 
-    // IMMEDIATE DRAIN — zero out stamina locally before the API round-trip
-    // so the bar collapses instantly on click.
-    playerStore.applyStaminaUpdate(0, new Date().toISOString());
-    displayStamina.value = 0;
+    // IMMEDIATE DRAIN — subtract 30 stamina locally on click.
+    // The WS StaminaUpdated event will confirm this from the server.
+    displayStamina.value = Math.max(0, displayStamina.value - 30);
 
     try {
         const response = await axios.post<{
@@ -219,13 +223,11 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
             flyingNumbers.value = flyingNumbers.value.filter((n) => n.id !== id);
         }, 900);
 
-        // Update node HP (WebSocket will confirm for other tabs)
+        // Node HP is updated below; stamina is authoritative from the WS StaminaUpdated event.
+        // Do NOT call applyStaminaUpdate here — it would introduce timestamp skew.
         if (node.value) {
             node.value.current_hp = data.node_hp_remaining;
         }
-
-        // Update stamina via store
-        playerStore.applyStaminaUpdate(data.stamina_remaining, new Date().toISOString());
 
         if (data.exp_gained > 0) {
             playerStore.addExp(data.exp_gained);
@@ -394,29 +396,31 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
             class="rounded-xl border border-sidebar-border/70 bg-card px-5 py-4 dark:border-sidebar-border"
         >
             <div class="flex items-center gap-4">
-                <span
-                    class="w-16 shrink-0 text-sm font-medium transition-colors duration-200"
-                    :class="isWeakHit ? 'text-red-400' : ''"
-                >
-                    Stamina
+                <div class="w-20 shrink-0">
                     <span
-                        v-if="isWeakHit"
-                        class="ml-1 rounded bg-red-500/20 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400"
-                    >Weak</span>
-                </span>
+                        class="text-sm font-medium transition-colors duration-200"
+                        :class="isLowPower ? 'text-red-400' : 'text-foreground'"
+                    >Stamina</span>
+                    <div
+                        class="mt-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors duration-200"
+                        :class="isLowPower ? 'text-red-400' : 'text-muted-foreground'"
+                    >
+                        POW: {{ powerPercent }}%
+                    </div>
+                </div>
                 <div
                     class="relative flex-1 overflow-hidden rounded-full bg-muted"
                     style="height: 20px"
-                    :class="{ 'animate-weak-shake': isWeakHit }"
+                    :class="{ 'animate-weak-shake': isLowPower }"
                 >
                     <div
                         class="h-full transition-all duration-150"
-                        :class="isWeakHit ? 'bg-red-500' : 'bg-blue-500'"
+                        :class="isLowPower ? 'bg-red-500' : 'bg-blue-500'"
                         :style="{ width: staminaPercent + '%' }"
                     />
                 </div>
-                <span class="w-16 shrink-0 text-right text-sm tabular-nums">
-                    {{ staminaPercent }} / 100
+                <span class="w-12 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
+                    {{ staminaPercent }}%
                 </span>
             </div>
         </div>

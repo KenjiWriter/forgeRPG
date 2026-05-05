@@ -19,11 +19,14 @@ use Carbon\CarbonImmutable;
 
 class MiningService
 {
-    /** 2 pts/sec → 50 seconds for a full 0→100 recharge */
-    private const STAMINA_REGEN_PER_SECOND = 2;
+    /** 3 pts/sec → ~33 seconds for a full 0→100 recharge */
+    private const STAMINA_REGEN_PER_SECOND = 3;
 
-    /** Each hit drains stamina to 0 (Total Drain mechanic) */
-    private const STAMINA_MINIMUM_THRESHOLD = 5;
+    /** Fixed stamina cost per hit */
+    private const STAMINA_COST_PER_HIT = 30.0;
+
+    /** Minimum stamina required to initiate a hit */
+    private const STAMINA_MINIMUM_THRESHOLD = 10;
 
     /**
      * Process a mining hit on a node.
@@ -54,12 +57,14 @@ class MiningService
             abort(422, 'Not enough stamina.');
         }
 
-        $multiplier = $this->staminaMultiplier($effectiveStamina);
+        // Linear scaling: FinalDamage = BaseDamage * (CurrentStamina / 100)
+        // A hit at 50% stamina deals exactly 50% of base damage.
+        $multiplier  = $effectiveStamina / 100.0;
         $pickaxePower = $equippedPickaxe?->mining_dmg_bonus ?? 5;
         $damage = max(1, (int) round(($pickaxePower + $stats->mining_speed) * $multiplier));
 
-        // Total Drain: every hit costs all remaining stamina; regen restarts from 0.
-        $newStamina = 0.0;
+        // Fixed 30-stamina cost per hit; clamp to 0 so it never goes negative.
+        $newStamina = max(0.0, $effectiveStamina - self::STAMINA_COST_PER_HIT);
         $staminaUpdatedAt = CarbonImmutable::now();
 
         $stats->stamina = $newStamina;
@@ -136,12 +141,6 @@ class MiningService
         return min(100.0, $stats->stamina + $regenerated);
     }
 
-    private function staminaMultiplier(float $stamina): float
-    {
-        // 100% stamina → full damage; below 20% → 0.25x (Weak Hit)
-        return $stamina >= 20 ? 1.00 : 0.25;
-    }
-
     /**
      * @return list<array{ore_id: int, name: string}>
      */
@@ -202,11 +201,11 @@ class MiningService
         $spawned = 0;
 
         foreach ($nodeTypes as $nodeType) {
+            // Only count nodes that are genuinely mineable: have HP and are not on a respawn timer.
             $activeCount = MiningNode::where('island_id', $island->id)
                 ->where('node_type_id', $nodeType->id)
-                ->where(function ($query): void {
-                    $query->whereNull('respawns_at')->orWhere('respawns_at', '<=', now());
-                })
+                ->where('current_hp', '>', 0)
+                ->whereNull('respawns_at')
                 ->count();
 
             $needed = max(0, $minimumPerType - $activeCount);
