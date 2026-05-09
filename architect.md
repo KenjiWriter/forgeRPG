@@ -333,52 +333,84 @@ After loot is resolved:
 
 ---
 
-## Forge Signature & Item Stat Calculation
+## Forge Engine Final Implementation (2026-05-09)
 
-### Forge Signature
+### 1) Forge Initialization
 
-The **Forge Signature** is a deterministic SHA-256 hash that uniquely identifies a combination of ore inputs, independent of player or session. It is the primary mechanism for item type identity and recipe discovery.
+- Endpoint: `POST /forge/init`
+- Validation layer: `ForgeInitRequest`
+  - `target_slot` is required and restricted to: `helmet, armor, pants, boots, weapon, pickaxe`
+  - `ore_inputs` is required and must be an array of exactly 3 entries
+  - Each entry requires `ore_type_id` and `quantity >= 1`
+- Rule of 3 (implemented behavior): the forge starts only when exactly three ore units are submitted. Multiples of the same ore type are allowed by submitting repeated entries with the same `ore_type_id`.
+- On success, server consumes ore inventory and creates an `in_progress` forge session.
 
-**Input normalization** (must be applied before hashing to ensure determinism):
-1. Sort ore inputs by `ore_type_id` ascending.
-2. For each ore type, record `{ ore_type_id, quantity_bucket, rarity }`.  
-   `quantity_bucket` maps raw quantity to a discrete tier (1–5) to avoid infinite hash variations:
-   - 1–5 units → bucket 1, 6–15 → bucket 2, 16–30 → bucket 3, 31–50 → bucket 4, 51+ → bucket 5.
-3. Append the `forge_rune_id` (or `null` if none).
-4. Serialize as canonical JSON and SHA-256 hash the result.
+### 2) Smelting Mechanics (Stage 1)
 
-```
-forge_signature = SHA-256(
-  json_encode([
-    sorted ore inputs as { ore_type_id, quantity_bucket, rarity },
-    forge_rune_id | null
-  ])
-)
-```
+- File: `resources/js/components/Forge/SmellingStage.vue`
+- Duration: 10 seconds.
+- Bellows model is physics-based with gravity-fed cooling versus manual lift:
+  - Cooling/"gravity" target velocity: `-22 heat/sec`
+  - Manual lift target velocity: `+44.2 heat/sec` (30% boost from prior tuning)
+  - Tap boost on push start: `+1.2 heat`
+  - Damping (response smoothing): `11`
+  - Velocity cap: rise `50`, fall `36`
+- Sweet Spot movement:
+  - Sine-wave oscillation over time using `sin(2πt / period)`
+  - Amplitude: `32`, period: `7600 ms`
+  - Smoothed with lerp (`SWEET_SPOT_LERP_SPEED = 3.4`) and constrained inside 10–90 vertical range
+- Smelting Score = percentage of stage time the heat indicator remains inside the moving Sweet Spot.
 
-### Item Stat Calculation Formula
+### 3) Smithing Mechanics (Stage 2)
 
-All item stats are computed **at forge time** by the `ForgeEngine` service and persisted to the `items` table. They are never recalculated after creation.
+- File: `resources/js/components/Forge/SmithingStage.vue`
+- Rhythm circles spawn at random coordinates within bounded arena percentages:
+  - `x = 10..90`
+  - `y = 10..90`
+- Ring over-shrinking windows (scale-based):
+  - Early: `scale > 1.2`
+  - Perfect: `0.9 <= scale <= 1.1`
+  - Late: `0.5 <= scale < 0.9`
+  - Miss: `scale < 0.5` or timeout
+- Visual timing cues:
+  - Perfect window ring glow: green
+  - Late window ring glow: orange
+- Scoring impact:
+  - Perfect = 100
+  - Late = 50
+  - Early = 50
+  - Miss = 0
 
-```
-Base Stat     = SUM of (ore_type.base_{stat} * quantity_weight) for all input ores
-              where quantity_weight = quantity_bucket / 5  (normalized 0.2–1.0)
+### 4) Stat Synthesis & Rewards
 
-Grade Factor  = Forge Grade Factor from FEATURES.md grade table
-              (I=0.50, II=0.60, ..., X=2.00)
+- Forge final quality is derived from weighted stage score:
+  - `combined_score = round(smelting*0.30 + smithing*0.50 + quench*0.20)`
+  - `combined_score` maps to Grade I–X
+  - Grade maps to a Grade Factor multiplier used in final stats
+- Final stat pipeline implemented in `ForgeService`:
+  - `BaseStats = TemplateBase(target_slot) + OreBonuses(ore_inputs)`
+  - `FinalQuality%` is represented by the grade-derived quality multiplier (`GradeFactor`) computed from `combined_score`
+  - `FinalStats = round(BaseStats * GradeFactor * LevelMultiplier)`
+  - `LevelMultiplier = min(1 + (player_level - 1)*0.02, 2.0)`
+- Reward persistence flow:
+  - `POST /forge/complete` creates item and stores it on `forge_sessions.result_item_id` with session status `completed`
+  - `POST /forge/acquire/{session}` verifies ownership, ensures completed session + attached item, inserts item into permanent polymorphic inventory (`inventories` with `holdable_type = Item`), and archives session (`status = archived`)
 
-Level Multiplier = 1 + (player.level - 1) * 0.02   (2% per level, capped at level 50 = 2.0×)
+### 5) Forge Signature (Implemented)
 
-Final Stat    = ROUND(Base Stat * Grade Factor * Level Multiplier)
-```
+- Current implementation stores deterministic raw signature text, not a hash:
+  - Sort ore inputs by `ore_type_id`
+  - Join as `ID:QTY|ID:QTY|ID:QTY`
+- Example: `1:1|1:1|3:1`
 
-**Example**: A Grade VII weapon forged by a Level 10 player using Ironite (base_attack=20) × quantity_bucket 3:
-```
-Base Attack   = 20 * (3/5) = 12
-Grade Factor  = 1.15  (Grade VII)
-Level Multi   = 1 + (10-1) * 0.02 = 1.18
-Final Attack  = ROUND(12 * 1.15 * 1.18) = ROUND(16.29) = 16
-```
+### 6) DevTools: Ore Granting Command
+
+- Artisan command for forge testing:
+  - `php artisan game:give-ore {ore_id} {quantity=10} {user_id?}`
+- Behavior:
+  - Validates ore and user
+  - Adds or increments ore quantity in `inventories` for the target user
+  - Prints resulting quantity for quick test setup
 
 ---
 
@@ -421,35 +453,30 @@ Player clicks a Mining Node
 ### Forging Session
 
 ```
-Player opens Forge with selected ore stacks
-  → Client sends POST /forge/begin { ore_inputs: [{ ore_type_id, quantity }] }
-  → Server:
-    1. Validate: player owns sufficient ore quantities
-    2. Compute forge_signature from normalized inputs
-    3. Deduct ore from inventories (locked/reserved until session completes or expires)
-    4. Create forge_sessions row (status: in_progress)
-    5. Return { forge_session_id, stage: "smelting" }
+Player selects target slot and 3 total ore units
+  → Client sends POST /forge/init { target_slot, ore_inputs }
+  → Server validates Rule of 3 + ownership, consumes ores, creates forge_sessions(status=in_progress)
+  → Returns { forge_session_id, next_stage: "smelting" }
 
-Stage 1 — Smelting (client mini-game completes)
-  → Client sends POST /forge/{session}/smelting { events: [ { type, timestamp_ms, position } ] }
-  → Server re-validates timing events, computes smelting_score (0–100)
-  → Returns { smelting_score, next_stage: "smithing" }
+Client runs Stage 1 Smelting + Stage 2 Smithing + Stage 3 Quenching locally
+  → Client sends POST /forge/complete {
+      forge_session_id,
+      smelting_score,
+      smithing_score,
+      quench_score,
+      item_name
+    }
+  → Server verifies ownership + in_progress status
+  → Computes combined_score, grade, final stats
+  → Creates item row and updates forge_sessions(status=completed, result_item_id)
+  → Returns { item, grade, combined_score }
 
-Stage 2 — Smithing (client mini-game completes)
-  → Client sends POST /forge/{session}/smithing { hits: [ { circle_id, timestamp_ms } ] }
-  → Server compares timestamps against generated circle windows, computes smithing_score
-  → Returns { smithing_score, next_stage: "quenching" }
-
-Stage 3 — Quenching (client selects quench point)
-  → Client sends POST /forge/{session}/quench { quench_timestamp_ms }
-  → Server maps timestamp to cooling curve position → quench_score
-  → Computes combined_score = (smelting * 0.30) + (smithing * 0.50) + (quench * 0.20)
-  → Maps combined_score to forge_grade (I–X)
-  → Runs ForgeEngine: calculates all item stats using Forge Signature formula
-  → Creates items row
-  → Adds item to player inventories
-  → Updates forge_sessions: status=complete, result_item_id
-  → Returns { item, forge_grade, combined_score }
+Player confirms reward from result screen
+  → Client sends POST /forge/acquire/{session}
+  → Server validates ownership + completed session + attached item
+  → Inserts item into inventories (holdable_type=Item, holdable_id=item_id)
+  → Archives forge session (status=archived)
+  → Returns { success: true, message: "Item added to inventory!" }
 ```
 
 ---
@@ -615,7 +642,7 @@ $pickaxe = $user->equipmentSlots()
 - [x] ForgeController.complete(): Validate ownership, compute scores, persist item
 - [x] ForgeInitRequest: Validates 3 ores array with ore_type_id, quantity
 - [x] ForgeCompleteRequest: Validates forge_session_id and scores 0-100
-- [x] Route registration: GET /forge, POST /forge/init, POST /forge/complete
+- [x] Route registration: GET /forge, POST /forge/init, POST /forge/complete, POST /forge/acquire/{session}
 
 #### Phase 4: Frontend Integration
 - [x] resources/js/pages/Forge/Index.vue: Main page with state machine (selection → smelting → smithing → quenching → result)

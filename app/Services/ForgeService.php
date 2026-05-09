@@ -7,7 +7,6 @@ use App\Models\Inventory;
 use App\Models\Item;
 use App\Models\OreType;
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
 
 class ForgeService
 {
@@ -449,30 +448,8 @@ class ForgeService
         // Calculate base stats from ores + target-slot template
         $baseStats = $this->calculateBaseStats($session->ore_inputs, $session->target_slot);
 
-        $gradeFactor = $this->getGradeFactor($grade);
-        $levelMultiplier = $this->getLevelMultiplier((int) $player->level);
-
         // Apply multipliers
         $finalStats = $this->applyStatMultipliers($baseStats, $player->level, $grade);
-
-        Log::info('Forge stat synthesis pipeline', [
-            'forge_session_id' => $session->id,
-            'player_id' => $player->id,
-            'target_slot' => $session->target_slot,
-            'ore_inputs' => $session->ore_inputs,
-            'scores' => [
-                'smelting' => $smeltingScore,
-                'smithing' => $smithingScore,
-                'quench' => $quenchScore,
-                'combined' => $combinedScore,
-            ],
-            'grade' => $grade,
-            'grade_factor' => $gradeFactor,
-            'level' => $player->level,
-            'level_multiplier' => $levelMultiplier,
-            'base_stats' => $baseStats,
-            'final_stats' => $finalStats,
-        ]);
 
         // Create item
         $item = Item::create([
