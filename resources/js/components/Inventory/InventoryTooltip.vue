@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'vue-sonner';
 import { computed, ref, watch } from 'vue';
 import { sellByItemId } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
+import { formatExactNumber, formatNumber } from '@/lib/utils';
 
 export interface InventoryItemData {
     inventory_id: number;
@@ -272,11 +273,11 @@ const tooltipStyle = computed(() => {
         <div class="mb-2 space-y-1 rounded border border-slate-700/60 bg-slate-950/60 p-2 text-xs">
             <div class="flex items-center justify-between">
                 <span class="text-slate-400">Unit Price</span>
-                <span class="font-mono font-bold text-amber-300">{{ unitPrice }} G</span>
+                <span class="font-mono font-bold text-amber-300" :title="formatExactNumber(unitPrice)">{{ formatNumber(unitPrice) }} G</span>
             </div>
             <div class="flex items-center justify-between">
                 <span class="text-slate-400">Total Value</span>
-                <span class="font-mono font-bold text-amber-300">{{ stackTotalValue }} G</span>
+                <span class="font-mono font-bold text-amber-300" :title="formatExactNumber(stackTotalValue)">{{ formatNumber(stackTotalValue) }} G</span>
             </div>
         </div>
 
@@ -293,7 +294,7 @@ const tooltipStyle = computed(() => {
                 :max="maxSellQuantity"
                 @input="clampSellQuantity"
                 @click.stop
-            >
+            />
             <input
                 v-model.number="sellQuantity"
                 type="range"
@@ -303,9 +304,9 @@ const tooltipStyle = computed(() => {
                 step="1"
                 @input="clampSellQuantity"
                 @click.stop
-            >
+            />
             <p class="mb-2 text-[11px] text-slate-400">
-                Selected value: <span class="font-bold text-amber-300">{{ selectedTotalValue }} G</span>
+                Selected value: <span class="font-bold text-amber-300" :title="formatExactNumber(selectedTotalValue)">{{ formatNumber(selectedTotalValue) }} G</span>
             </p>
             <div class="flex gap-1.5">
                 <button

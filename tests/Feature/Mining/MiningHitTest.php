@@ -266,9 +266,9 @@ test('cannot collect node that is not destroyed', function () {
 test('low stamina results in lower damage multiplier', function () {
     $user = User::factory()->create();
 
-    // Set stamina very low (just above threshold) with recent update
+    // Set stamina low but above the minimum threshold.
     $user->stats->update([
-        'stamina' => 6,
+        'stamina' => 11,
         'stamina_last_updated_at' => now(),
         'mining_speed' => 0,
     ]);
@@ -286,7 +286,7 @@ test('low stamina results in lower damage multiplier', function () {
             'node_id' => $node->id,
         ])->assertOk();
 
-    // Pickaxe power=5, mining_speed=0, multiplier=0.25 (stamina<20) → dmg = round(5 * 0.25) = 1
+    // Pickaxe power=5, mining_speed=0, multiplier=0.11 → dmg = round(5 * 0.11) = 1
     expect($response->json('damage_dealt'))->toBe(1);
 });
 

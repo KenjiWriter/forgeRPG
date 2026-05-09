@@ -13,6 +13,7 @@ import InventoryTooltip, {
     type InventoryItemData,
     type InventorySaleSuccessPayload,
 } from '@/components/Inventory/InventoryTooltip.vue';
+import { formatExactNumber, formatNumber } from '@/lib/utils';
 
 interface Player {
     id: number;
@@ -401,9 +402,10 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                         >
                         <span
                             class="inline-flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-[11px] font-semibold text-yellow-300"
+                            :title="formatExactNumber(playerStore.gold)"
                         >
                             <span aria-hidden="true">🪙</span>
-                            {{ playerStore.gold }} Gold
+                            {{ formatNumber(playerStore.gold) }} Gold
                         </span>
                     </div>
                     <div class="h-2 w-44 overflow-hidden rounded-full bg-muted">
@@ -412,8 +414,8 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                             :style="{ width: expPercent + '%' }"
                         />
                     </div>
-                    <span class="text-xs text-muted-foreground"
-                        >{{ playerStore.experience }} / {{ props.player.next_level_exp }} XP</span
+                    <span class="text-xs text-muted-foreground" :title="`${formatExactNumber(playerStore.experience)} / ${formatExactNumber(props.player.next_level_exp)} XP`"
+                        >{{ formatNumber(playerStore.experience) }} / {{ formatNumber(props.player.next_level_exp) }} XP</span
                     >
                 </div>
             </div>
@@ -464,8 +466,9 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                             class="animate-fly-up pointer-events-none absolute font-bold text-red-400 drop-shadow-md"
                             style="font-size: 1.25rem; transform: translate(-50%, -50%)"
                             :style="{ left: n.x + 'px', top: n.y + 'px' }"
+                            :title="formatExactNumber(n.damage)"
                         >
-                            -{{ n.damage }}
+                            -{{ formatNumber(n.damage) }}
                         </div>
                     </div>
 

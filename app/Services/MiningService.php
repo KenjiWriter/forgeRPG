@@ -12,6 +12,7 @@ use App\Models\Island;
 use App\Models\Item;
 use App\Models\LevelDefinition;
 use App\Models\MiningNode;
+use App\Models\NodeType;
 use App\Models\OreType;
 use App\Models\PlayerStat;
 use App\Models\User;
@@ -36,7 +37,7 @@ class MiningService
      *     node_hp_remaining: int,
      *     is_destroyed: bool,
      *     stamina_remaining: float,
-        *     loot: null,
+     *     loot: null,
      *     exp_gained: int,
      *     new_player_exp: int,
      *     level_up: bool
@@ -140,7 +141,7 @@ class MiningService
 
         broadcast(new NodeDepleted($node->id, $respawnsAt, $node->nodeType->slug, $node->island_id));
 
-        $nextNode = $node->island ? $this->spawnRandomNodeForIsland($node->island) : null;
+        $nextNode = $node->island ? $this->spawnRandomNodeForIsland($node->island, $node->nodeType) : null;
 
         return [
             'loot' => $loot,
@@ -223,9 +224,9 @@ class MiningService
         }
     }
 
-    private function spawnRandomNodeForIsland(Island $island): ?MiningNode
+    private function spawnRandomNodeForIsland(Island $island, ?NodeType $fallbackNodeType = null): ?MiningNode
     {
-        $randomNodeType = $island->nodeTypes()->inRandomOrder()->first();
+        $randomNodeType = $island->nodeTypes()->inRandomOrder()->first() ?? $fallbackNodeType;
 
         if ($randomNodeType === null) {
             return null;
