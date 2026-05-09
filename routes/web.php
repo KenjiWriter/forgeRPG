@@ -30,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Inventory endpoints
     Route::post('inventory/equip/{inventory}', [InventoryController::class, 'equip'])->name('inventory.equip');
     Route::post('api/inventory/equip', [InventoryController::class, 'equipByItemId'])->name('inventory.equip.item');
+    Route::post('api/inventory/unequip', [InventoryController::class, 'unequip'])->name('inventory.unequip');
     Route::post('inventory/sell/{inventory}', [InventoryController::class, 'sell'])->name('inventory.sell');
     Route::post('api/inventory/sell', [InventoryController::class, 'sellByItemId'])->name('inventory.sell.item');
 });

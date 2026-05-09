@@ -236,6 +236,19 @@ class InventoryController extends Controller
                     $equipmentSlot->slot => $equipmentSlot->item ? [
                         'id' => $equipmentSlot->item->id,
                         'name' => $equipmentSlot->item->name,
+                        'mining_power' => $equipmentSlot->item->mining_dmg_bonus ?? 0,
+                        'mining_speed_bonus' => $equipmentSlot->item->mining_speed_bonus ?? 0,
+                        'luck_bonus' => $equipmentSlot->item->luck_bonus ?? 0,
+                        'stamina_regen_bonus' => (float) ($equipmentSlot->item->stamina_regen_bonus ?? 0),
+                        'hp_bonus' => $equipmentSlot->item->hp_bonus ?? 0,
+                        'defense_bonus' => $equipmentSlot->item->defense_bonus ?? 0,
+                        'attack_bonus' => $equipmentSlot->item->attack_bonus ?? 0,
+                        'dodge_bonus' => $equipmentSlot->item->dodge_bonus ?? 0,
+                        'crit_chance' => $equipmentSlot->item->crit_chance ?? 0,
+                        'attack_speed_bonus' => $equipmentSlot->item->attack_speed_bonus ?? 0,
+                        'elemental_affinity' => $equipmentSlot->item->elemental_affinity,
+                        'forge_grade' => $equipmentSlot->item->forge_grade,
+                        'final_stats' => $equipmentSlot->item->final_stats ?? [],
                     ] : null,
                 ])
                 ->all();
@@ -249,6 +262,8 @@ class InventoryController extends Controller
 
             return [
                 'slot' => $slot,
+                'inventory_id' => $lockedInventory->id,
+                'item_name' => $item->name,
                 'equipped_item' => [
                     'id' => $item->id,
                     'name' => $item->name,
@@ -268,6 +283,62 @@ class InventoryController extends Controller
         return response()->json([
             'message' => 'Item equipped.',
             ...$result,
+        ]);
+    }
+
+    /**
+     * Unequip an item by setting its equipped flag to false.
+     */
+    public function unequip(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'inventory_id' => ['nullable', 'integer'],
+            'item_id' => ['required'],
+        ]);
+
+        $item = Item::query()
+            ->where('id', (string) $validated['item_id'])
+            ->where('player_id', $user->id)
+            ->first();
+
+        if ($item === null) {
+            abort(404, 'Item not found.');
+        }
+
+        $item->equipped = false;
+        $item->save();
+
+        // Return updated equipment state
+        $equipmentState = EquipmentSlot::query()
+            ->where('user_id', $user->id)
+            ->with('item')
+            ->get()
+            ->mapWithKeys(fn (EquipmentSlot $equipmentSlot) => [
+                $equipmentSlot->slot => $equipmentSlot->item ? [
+                    'id' => $equipmentSlot->item->id,
+                    'name' => $equipmentSlot->item->name,
+                    'mining_power' => $equipmentSlot->item->mining_dmg_bonus ?? 0,
+                    'mining_speed_bonus' => $equipmentSlot->item->mining_speed_bonus ?? 0,
+                    'luck_bonus' => $equipmentSlot->item->luck_bonus ?? 0,
+                    'stamina_regen_bonus' => (float) ($equipmentSlot->item->stamina_regen_bonus ?? 0),
+                    'hp_bonus' => $equipmentSlot->item->hp_bonus ?? 0,
+                    'defense_bonus' => $equipmentSlot->item->defense_bonus ?? 0,
+                    'attack_bonus' => $equipmentSlot->item->attack_bonus ?? 0,
+                    'dodge_bonus' => $equipmentSlot->item->dodge_bonus ?? 0,
+                    'crit_chance' => $equipmentSlot->item->crit_chance ?? 0,
+                    'attack_speed_bonus' => $equipmentSlot->item->attack_speed_bonus ?? 0,
+                    'elemental_affinity' => $equipmentSlot->item->elemental_affinity,
+                    'forge_grade' => $equipmentSlot->item->forge_grade,
+                    'final_stats' => $equipmentSlot->item->final_stats ?? [],
+                ] : null,
+            ])
+            ->all();
+
+        return response()->json([
+            'message' => 'Item unequipped.',
+            'equipment' => $equipmentState,
         ]);
     }
 }

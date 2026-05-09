@@ -60,6 +60,33 @@ interface Pickaxe {
     stamina_regen_bonus: number;
 }
 
+interface EquipmentItem {
+    id: string;
+    name: string;
+    mining_power: number;
+    mining_speed_bonus: number;
+    luck_bonus: number;
+    stamina_regen_bonus: number;
+    hp_bonus: number;
+    defense_bonus: number;
+    attack_bonus: number;
+    dodge_bonus?: number;
+    crit_chance?: number;
+    attack_speed_bonus?: number;
+    elemental_affinity: string;
+    forge_grade: number;
+    final_stats: Record<string, number>;
+}
+
+interface BaseStats {
+    hp: number;
+    attack: number;
+    defense: number;
+    mining_speed: number;
+    attack_speed: number;
+    dodge: number;
+}
+
 interface FlyingNumber {
     id: number;
     damage: number;
@@ -74,6 +101,8 @@ const props = defineProps<{
     current_node: MiningNode | null;
     inventory: InventoryItem[];
     equipped_pickaxe: Pickaxe | null;
+    equipment: Record<string, EquipmentItem | null>;
+    base_stats: BaseStats;
 }>();
 
 const playerStore = usePlayerStore();
@@ -82,8 +111,10 @@ playerStore.initialize(props.player, props.player_stats, props.equipped_pickaxe)
 // Local reactive state for node and inventory (updated via WebSocket + hit responses)
 const node = ref<MiningNode | null>(props.current_node ? { ...props.current_node } : null);
 const inventory = ref<InventoryItem[]>([...props.inventory]);
+const equipment = ref<Record<string, EquipmentItem | null>>({ ...props.equipment });
 
 // Inventory panel UI state
+const inventoryOpen = ref(false);
 const inventoryExpanded = ref(true);
 const tooltip = ref<{ item: InventoryItem; anchorX: number; anchorY: number; anchorLeft: number } | null>(null);
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +122,13 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null;
 onUnmounted(() => {
     if (hideTimer) clearTimeout(hideTimer);
 });
+
+// Helper: Find inventory item that corresponds to an equipped item
+function getInventoryItemForEquipped(equippedItem: EquipmentItem): InventoryItem | undefined {
+    return inventory.value.find(
+        (invItem) => invItem.id === equippedItem.id && invItem.is_equipped === true,
+    );
+}
 
 function showTooltip(item: InventoryItem, event: MouseEvent): void {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
@@ -110,10 +148,28 @@ function handleEquipped(payload: InventoryEquipSuccessPayload): void {
     tooltip.value = null;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
 
-    if (payload.equippedPickaxe) {
-        playerStore.equipPickaxe(payload.equippedPickaxe);
-    } else if (payload.slot === 'pickaxe') {
-        playerStore.currentPickaxe = null;
+    const item = inventory.value.find((i) => i.inventory_id === payload.inventoryId);
+
+    // Check if it's an unequip (equippedPickaxe is null)
+    if (payload.equippedPickaxe === null && item) {
+        item.is_equipped = false;
+        // Unequip: clear equipment slots by finding which slot had this item
+        Object.keys(equipment.value).forEach((slotKey) => {
+            if (equipment.value[slotKey]?.id === item.id) {
+                equipment.value[slotKey] = null;
+            }
+        });
+        toast.success(`Unequipped: ${payload.itemName}`);
+    } else {
+        // Equip: update equipment and mark item as equipped
+        if (payload.slot && payload.equippedPickaxe) {
+            equipment.value[payload.slot] = payload.equippedPickaxe;
+            playerStore.equipPickaxe(payload.equippedPickaxe);
+        }
+        if (item) {
+            item.is_equipped = true;
+        }
+        toast.success(`Equipped: ${payload.itemName}`);
     }
 }
 
@@ -247,6 +303,122 @@ const isLowPower = computed(() => displayStamina.value < 20);
 const totalMiningPower = computed(() => playerStore.currentPickaxe?.mining_power ?? 0);
 const totalMiningLuck = computed(() => playerStore.currentPickaxe?.luck_bonus ?? 0);
 const staminaRegenLabel = computed(() => `${staminaRegenPerSecond.value.toFixed(1)}/s`);
+
+// Character section totals
+const totalMiningPowerStats = computed(() => {
+    const baseSpeed = props.base_stats.mining_speed ?? 0;
+    const equippedBonus = equipment.value.pickaxe?.mining_power ?? 0;
+    return baseSpeed + equippedBonus;
+});
+
+const totalMiningLuckStats = computed(() => {
+    return equipment.value.pickaxe?.luck_bonus ?? 0;
+});
+
+const totalStaminaRegen = computed(() => {
+    const baseRegen = 3;
+    const equippedBonus = equipment.value.pickaxe?.stamina_regen_bonus ?? 0;
+    return baseRegen + equippedBonus;
+});
+
+const totalDefense = computed(() => {
+    const baseDef = props.base_stats.defense ?? 0;
+    let armorBonus = 0;
+
+    if (equipment.value.armor) {
+        armorBonus += equipment.value.armor.defense_bonus ?? 0;
+    }
+    if (equipment.value.helmet) {
+        armorBonus += equipment.value.helmet.defense_bonus ?? 0;
+    }
+
+    return baseDef + armorBonus;
+});
+
+// Combat stats calculations
+const totalHP = computed(() => {
+    const baseHP = props.base_stats.hp ?? 0;
+    let hpBonus = 0;
+
+    if (equipment.value.armor) {
+        hpBonus += equipment.value.armor.hp_bonus ?? 0;
+    }
+    if (equipment.value.helmet) {
+        hpBonus += equipment.value.helmet.hp_bonus ?? 0;
+    }
+    if (equipment.value.pickaxe) {
+        hpBonus += equipment.value.pickaxe.hp_bonus ?? 0;
+    }
+
+    return baseHP + hpBonus;
+});
+
+const totalAttackDamage = computed(() => {
+    const baseAttack = props.base_stats.attack ?? 0;
+    let attackBonus = 0;
+
+    if (equipment.value.weapon) {
+        attackBonus += equipment.value.weapon.attack_bonus ?? 0;
+    }
+    if (equipment.value.pickaxe) {
+        attackBonus += equipment.value.pickaxe.attack_bonus ?? 0;
+    }
+
+    return baseAttack + attackBonus;
+});
+
+const totalCritChance = computed(() => {
+    let crit = 0;
+
+    if (equipment.value.weapon) {
+        crit += equipment.value.weapon.crit_chance ?? 0;
+    }
+
+    return crit;
+});
+
+const totalDodgeChance = computed(() => {
+    const baseDodge = props.base_stats.dodge ?? 0;
+    let dodgeBonus = 0;
+
+    if (equipment.value.armor) {
+        dodgeBonus += equipment.value.armor.dodge_bonus ?? 0;
+    }
+    if (equipment.value.boots) {
+        dodgeBonus += equipment.value.boots.dodge_bonus ?? 0;
+    }
+
+    return baseDodge + dodgeBonus;
+});
+
+const totalAttackSpeed = computed(() => {
+    const baseSpeed = props.base_stats.attack_speed ?? 1;
+    let speedBonus = 0;
+
+    if (equipment.value.weapon) {
+        speedBonus += equipment.value.weapon.attack_speed_bonus ?? 0;
+    }
+
+    return baseSpeed + speedBonus;
+});
+
+const SLOT_ICONS: Record<string, string> = {
+    helmet: '⛑️',
+    armor: '🛡️',
+    pants: '👖',
+    boots: '👞',
+    weapon: '⚔️',
+    pickaxe: '⛏️',
+};
+
+const SLOT_LABELS: Record<string, string> = {
+    helmet: 'Head',
+    armor: 'Body',
+    pants: 'Legs',
+    boots: 'Feet',
+    weapon: 'Weapon',
+    pickaxe: 'Tool',
+};
 
 const rarityBorderMap: Record<string, string> = {
     common: 'border-slate-600',
@@ -466,7 +638,7 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
             </div>
         </div>
 
-        <!-- Main area: Mining Zone + Inventory -->
+        <!-- Main area: Mining Zone (with overlay inventory panel) -->
         <div class="flex min-h-0 flex-1 gap-4">
             <!-- Mining Zone -->
             <div
@@ -540,66 +712,203 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                         <p class="mt-1 text-sm">Check back soon.</p>
                     </div>
                 </template>
+
+                <!-- Inventory toggle button (floating) -->
+                <button
+                    v-if="!inventoryOpen"
+                    class="fixed bottom-4 right-4 z-40 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg transition hover:bg-primary/90 active:scale-95"
+                    @click="inventoryOpen = true"
+                    title="Open Inventory"
+                >
+                    📦 Inventory ({{ inventory.length }})
+                </button>
             </div>
 
-            <!-- Inventory sidebar -->
-            <div
-                class="flex w-64 shrink-0 flex-col rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
+            <!-- Inventory Slide-out Panel (from right) - Fixed Positioned -->
+            <Transition
+                enter-active-class="transition-all duration-300 ease-out"
+                leave-active-class="transition-all duration-300 ease-in"
+                enter-from-class="translate-x-full"
+                leave-to-class="translate-x-full"
             >
-                <!-- Inventory header / toggle -->
-                <div
-                    class="flex cursor-pointer select-none items-center justify-between px-4 py-3"
-                    @click="inventoryExpanded = !inventoryExpanded"
-                >
-                    <h3 class="text-sm font-semibold">
-                        Inventory
-                        <span class="ml-1 text-xs font-normal text-muted-foreground">({{ inventory.length }})</span>
-                    </h3>
-                    <ChevronUp v-if="inventoryExpanded" class="h-4 w-4 text-muted-foreground" />
-                    <ChevronDown v-else class="h-4 w-4 text-muted-foreground" />
-                </div>
-
-                <!-- Grid scrollbox -->
-                <div
-                    v-if="inventoryExpanded"
-                    class="inventory-scrollbox p-3"
-                >
-                    <div
-                        v-if="inventory.length"
-                        class="grid gap-1.5"
-                        style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr))"
-                    >
-                        <div
-                            v-for="item in inventory"
-                            :key="item.inventory_id"
-                            class="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 bg-muted/40 p-1.5 text-center transition-colors hover:bg-muted/70"
-                            :class="itemBorderClass(item)"
-                            @mouseenter="showTooltip(item, $event)"
-                            @mouseleave="scheduleHide()"
+                <div v-show="inventoryOpen" class="fixed right-0 top-0 bottom-0 z-40 w-96 bg-slate-950/95 border-l border-sidebar-border/70 shadow-2xl overflow-hidden flex flex-col">
+                    <!-- Close button bar -->
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-sidebar-border/70 shrink-0">
+                        <h2 class="text-lg font-bold">Inventory</h2>
+                        <button
+                            class="rounded px-2 py-1 text-lg font-bold bg-slate-700 hover:bg-slate-600 text-white transition"
+                            @click="inventoryOpen = false"
+                            title="Close"
                         >
-                            <!-- Slot icon -->
-                            <div class="mb-0.5 text-2xl">
-                                <span v-if="item.holdable_type === 'item'">⚔️</span>
-                                <span v-else>🪨</span>
+                            ✕
+                        </button>
+                    </div>
+
+                    <!-- Inventory and Character sections (scrollable) -->
+                    <div class="flex-1 overflow-y-auto flex flex-col gap-4 p-4">
+                        <!-- Inventory Grid -->
+                        <div class="border border-sidebar-border/70 bg-card/50 p-4 rounded-lg">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold">
+                                    Items
+                                    <span class="ml-1 text-xs font-normal text-muted-foreground">({{ inventory.length }})</span>
+                                </h3>
+                                <button
+                                    class="text-xs"
+                                    @click="inventoryExpanded = !inventoryExpanded"
+                                >
+                                    <ChevronUp v-if="inventoryExpanded" class="h-4 w-4" />
+                                    <ChevronDown v-else class="h-4 w-4" />
+                                </button>
                             </div>
-                            <!-- Item name truncated -->
-                            <p class="w-full truncate text-center text-[10px] leading-tight text-muted-foreground">
-                                {{ item.name }}
-                            </p>
-                            <!-- Quantity badge -->
-                            <span
-                                v-if="item.quantity > 1"
-                                class="absolute right-0.5 top-0.5 rounded bg-black/70 px-1 text-[9px] font-bold text-white"
-                            >
-                                ×{{ item.quantity }}
-                            </span>
+
+                            <div v-if="inventoryExpanded" class="inventory-scrollbox max-h-48 overflow-y-auto">
+                                <div
+                                    v-if="inventory.length"
+                                    class="grid gap-1.5"
+                                    style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr))"
+                                >
+                                    <div
+                                        v-for="item in inventory"
+                                        :key="item.inventory_id"
+                                        class="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 bg-muted/40 p-1.5 text-center transition-all hover:bg-muted/70"
+                                        :class="[
+                                            itemBorderClass(item),
+                                            item.is_equipped && 'ring-2 ring-emerald-500/60 ring-offset-2 ring-offset-slate-800'
+                                        ]"
+                                        @mouseenter="showTooltip(item, $event)"
+                                        @mouseleave="scheduleHide()"
+                                    >
+                                        <div class="mb-0.5 text-2xl">
+                                            <span v-if="item.holdable_type === 'item'">⚔️</span>
+                                            <span v-else>🪨</span>
+                                        </div>
+                                        <p class="w-full truncate text-center text-[10px] leading-tight text-muted-foreground">
+                                            {{ item.name }}
+                                        </p>
+                                        <span
+                                            v-if="item.quantity > 1"
+                                            class="absolute right-0.5 top-0.5 rounded bg-black/70 px-1 text-[9px] font-bold text-white"
+                                        >
+                                            ×{{ item.quantity }}
+                                        </span>
+                                        <span
+                                            v-if="item.is_equipped"
+                                            class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg ring-2 ring-slate-900"
+                                        >
+                                            ✓
+                                        </span>
+                                    </div>
+                                </div>
+                                <p v-else class="py-6 text-center text-xs text-muted-foreground">
+                                    Nothing yet.<br />
+                                    Start mining!
+                                </p>
+                            </div>
+                        </div>
+
+            <!-- Character Section -->
+                        <div class="border border-sidebar-border/70 bg-card/50 p-4 rounded-lg">
+                            <p class="mb-3 text-sm font-semibold">Character</p>
+
+                            <div class="space-y-2">
+                                <div
+                                    v-for="slot in ['helmet', 'armor', 'pickaxe']"
+                                    :key="slot"
+                                    class="group flex items-center justify-between rounded-md border border-slate-700/50 bg-slate-900/30 p-2 transition-all cursor-pointer"
+                                    :class="equipment[slot] && 'hover:bg-slate-900/60 hover:border-slate-600/80 hover:ring-1 hover:ring-slate-600/40'"
+                                    @mouseenter="equipment[slot] && showTooltip(getInventoryItemForEquipped(equipment[slot]!)!, $event)"
+                                    @mouseleave="scheduleHide()"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-lg">{{ SLOT_ICONS[slot] || '?' }}</span>
+                                        <span class="text-xs font-semibold text-slate-300">{{ SLOT_LABELS[slot] }}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <p v-if="equipment[slot]" class="text-xs font-bold text-slate-200 group-hover:text-slate-100 transition">
+                                            {{ equipment[slot]?.name }}
+                                        </p>
+                                        <p v-else class="text-xs text-slate-500 group-hover:text-slate-400 transition">—</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Total Stats -->
+                        <div class="border border-sidebar-border/70 bg-card/50 p-4 rounded-lg">
+                            <p class="mb-4 text-sm font-semibold">Total Stats</p>
+
+                            <!-- Mining Stats Group -->
+                            <div class="mb-4 pb-4 border-b border-slate-700/50">
+                                <p class="mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Mining Stats</p>
+                                <div class="space-y-2">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>⛏️</span> Mining Power
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalMiningPowerStats }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>🍀</span> Luck
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalMiningLuckStats }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>⚡</span> Stamina Regen
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalStaminaRegen.toFixed(1) }}/s</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Combat Stats Group -->
+                            <div>
+                                <p class="mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Combat Stats</p>
+                                <div class="space-y-2">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>❤️</span> HP
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalHP }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>⚔️</span> Damage
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalAttackDamage }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>🛡️</span> Defense
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalDefense }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>🎯</span> Crit
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalCritChance.toFixed(1) }}%</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>💨</span> Dodge
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalDodgeChance.toFixed(1) }}%</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="flex items-center gap-1 text-slate-400">
+                                            <span>⚙️</span> ATK Speed
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-200">{{ totalAttackSpeed.toFixed(2) }}x</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <p v-else class="py-6 text-center text-xs text-muted-foreground">
-                        Nothing yet.<br />Start mining!
-                    </p>
                 </div>
-            </div>
+            </Transition>
 
             <!-- Global inventory tooltip (rendered at body level via fixed positioning) -->
             <Teleport to="body">

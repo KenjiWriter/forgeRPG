@@ -12,6 +12,7 @@ export interface InventoryItemData {
     quantity: number;
     holdable_type: 'ore' | 'item';
     base_sell_price: number;
+    is_equipped?: boolean;
     // Ore-specific
     rarity?: string;
     // Item-specific
@@ -130,6 +131,7 @@ const statLabels: Record<string, string> = {
     stamina_regen_bonus: 'Stamina Regen',
     attack_speed_bonus: 'ATK Spd',
     dodge_bonus: 'Dodge',
+    crit_chance: 'Crit %',
 };
 
 const visibleStats = computed(() => {
@@ -272,6 +274,41 @@ async function equipItem(): Promise<void> {
     }
 }
 
+async function unequipItem(): Promise<void> {
+    if (!isEquippable.value || !props.item.is_equipped || isEquipping.value) {
+        return;
+    }
+
+    isEquipping.value = true;
+
+    try {
+        await axios.post<{
+            message: string;
+            equipment: Record<string, any>;
+        }>('/api/inventory/unequip', {
+            inventory_id: props.item.inventory_id,
+            item_id: props.item.id,
+        }, { withXSRFToken: true });
+
+        emit('equipped', {
+            inventoryId: props.item.inventory_id,
+            itemName: props.item.name,
+            slot: '', // Not used for unequip, but required by interface
+            equippedPickaxe: null,
+        });
+
+        toast.success(`Unequipped: ${props.item.name}`);
+    } catch (error) {
+        const message = axios.isAxiosError(error)
+            ? (error.response?.data?.message ?? 'Unable to unequip item right now.')
+            : 'Unable to unequip item right now.';
+
+        toast.error(message);
+    } finally {
+        isEquipping.value = false;
+    }
+}
+
 const tooltipStyle = computed(() => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -328,6 +365,8 @@ const tooltipStyle = computed(() => {
                 <span class="text-slate-400">{{ stat.label }}</span>
                 <span class="font-mono font-bold text-white">
                     <template v-if="stat.key === 'stamina_regen_bonus'">+{{ Number(stat.value).toFixed(1) }}/s</template>
+                    <template v-else-if="stat.key === 'crit_chance' || stat.key === 'dodge_bonus'">+{{ Number(stat.value).toFixed(1) }}%</template>
+                    <template v-else-if="stat.key === 'attack_speed_bonus'">+{{ Number(stat.value).toFixed(2) }}x</template>
                     <template v-else>+{{ stat.value }}</template>
                 </span>
             </div>
@@ -393,11 +432,16 @@ const tooltipStyle = computed(() => {
         <div class="flex gap-1.5">
             <button
                 v-if="isEquippable"
-                class="flex-1 rounded bg-blue-600 px-2 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 active:bg-blue-700"
+                :class="[
+                    'flex-1 rounded px-2 py-1.5 text-xs font-bold text-white transition',
+                    props.item.is_equipped
+                        ? 'bg-slate-700 hover:bg-slate-600 active:bg-slate-800'
+                        : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700'
+                ]"
                 :disabled="isEquipping"
-                @click.stop="equipItem"
+                @click.stop="props.item.is_equipped ? unequipItem() : equipItem()"
             >
-                {{ isEquipping ? 'Equipping...' : 'Załóż' }}
+                {{ isEquipping ? (props.item.is_equipped ? 'Unequipping...' : 'Equipping...') : (props.item.is_equipped ? 'Zdejmij' : 'Załóż') }}
             </button>
             <button
                 v-if="!isSelling"

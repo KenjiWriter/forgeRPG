@@ -21,7 +21,7 @@ class DashboardController extends Controller
 
     public function show(Request $request): Response
     {
-        $user = $request->user()->load(['stats', 'currentIsland']);
+        $user = $request->user()->load(['stats', 'currentIsland', 'equipmentSlots.item']);
 
         /** @var PlayerStat $stats */
         $stats = $user->stats;
@@ -87,6 +87,7 @@ class DashboardController extends Controller
                         'target_slot' => $holdable->target_slot,
                         'elemental_affinity' => $holdable->elemental_affinity,
                         'final_stats' => $holdable->final_stats ?? [],
+                        'is_equipped' => $holdable->equipped ?? false,
                     ];
                 }
 
@@ -143,6 +144,37 @@ class DashboardController extends Controller
                 'luck_bonus' => $equippedPickaxe->luck_bonus,
                 'stamina_regen_bonus' => (float) $equippedPickaxe->stamina_regen_bonus,
             ] : null,
+            'equipment' => $user->equipmentSlots()
+                ->with('item')
+                ->get()
+                ->mapWithKeys(fn ($slot) => [
+                    $slot->slot => $slot->item ? [
+                        'id' => $slot->item->id,
+                        'name' => $slot->item->name,
+                        'mining_power' => $slot->item->mining_dmg_bonus ?? 0,
+                        'mining_speed_bonus' => $slot->item->mining_speed_bonus ?? 0,
+                        'luck_bonus' => $slot->item->luck_bonus ?? 0,
+                        'stamina_regen_bonus' => (float) ($slot->item->stamina_regen_bonus ?? 0),
+                        'hp_bonus' => $slot->item->hp_bonus ?? 0,
+                        'defense_bonus' => $slot->item->defense_bonus ?? 0,
+                        'attack_bonus' => $slot->item->attack_bonus ?? 0,
+                        'dodge_bonus' => $slot->item->dodge_bonus ?? 0,
+                        'crit_chance' => $slot->item->crit_chance ?? 0,
+                        'attack_speed_bonus' => $slot->item->attack_speed_bonus ?? 0,
+                        'elemental_affinity' => $slot->item->elemental_affinity,
+                        'forge_grade' => $slot->item->forge_grade,
+                        'final_stats' => $slot->item->final_stats ?? [],
+                    ] : null,
+                ])
+                ->all(),
+            'base_stats' => [
+                'hp' => $stats->hp,
+                'attack' => $stats->attack,
+                'defense' => $stats->defense,
+                'mining_speed' => $stats->mining_speed,
+                'attack_speed' => $stats->attack_speed,
+                'dodge' => $stats->dodge,
+            ],
         ]);
     }
 
