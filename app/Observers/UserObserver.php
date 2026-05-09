@@ -29,11 +29,13 @@ class UserObserver
         $woodenPickaxe = Pickaxe::where('name', 'Wooden Pickaxe')->first();
 
         $starterItem = Item::create([
+            'player_id' => $user->id,
             'name' => 'Wooden Pickaxe',
-            'slot_type' => 'pickaxe',
+            'target_slot' => 'pickaxe',
             'forge_grade' => 1,
             'mining_dmg_bonus' => $woodenPickaxe?->power ?? 5,
             'luck_bonus' => $woodenPickaxe?->luck_boost ?? 0,
+            'equipped' => true,
             'created_at' => now(),
         ]);
 

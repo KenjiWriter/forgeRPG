@@ -40,6 +40,11 @@ class User extends Authenticatable
         return $this->hasMany(EquipmentSlot::class);
     }
 
+    public function items(): HasMany
+    {
+        return $this->hasMany(Item::class, 'player_id');
+    }
+
     public function inventory(): HasMany
     {
         return $this->hasMany(Inventory::class);
@@ -47,7 +52,7 @@ class User extends Authenticatable
 
     public function forgeSessions(): HasMany
     {
-        return $this->hasMany(ForgeSession::class);
+        return $this->hasMany(ForgeSession::class, 'player_id');
     }
 
     public function currentIsland(): BelongsTo

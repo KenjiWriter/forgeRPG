@@ -589,9 +589,46 @@ $pickaxe = $user->equipmentSlots()
 - [ ] Start Reverb server: `php artisan reverb:start`
 - [ ] Confirm broadcast events fire correctly end-to-end
 
+### ✅ Forge Engine Implementation [COMPLETED — 2026-05-09]
+
+#### Phase 2: Schema & Models
+- [x] Migration: `rebuild_items_table_for_forge.php` — UUID PK, player_id FK, target_slot, forge_grade, forge_signature, base_stats/final_stats JSON, equipped boolean
+- [x] Migration: `rebuild_equipment_slots_for_uuid_items.php` — UUID item_id FK
+- [x] Migration: `rebuild_forge_sessions_for_forge_engine.php` — UUID PK, player_id FK, ore_inputs JSON, smelting/smithing/quench/combined_score, status enum, created_at only
+- [x] Updated Item model: UUID + HasUuids, player_id relationship, $timestamps=false, JSON casts
+- [x] Updated ForgeSession model: UUID + HasUuids, player_id relationship, $timestamps=false, JSON casts
+- [x] Updated User model: items() HasMany and forgeSessions() relationships
+
+#### Phase 3: Business Logic
+- [x] ForgeService.php: 500+ lines of pure forge logic
+  - `generateSignature(array $ores)`: Deterministic sorted format "ID:QTY|ID:QTY"
+  - `validateOreInputs()`: Enforce Rule of 3 Ores
+  - `validatePlayerOwnsOres()`: Ownership checks before consumption
+  - `mapScoreToGrade()`: Combined score (0-100) → Grade I-X with Grade Factors
+  - `calculateBaseStats() & applyStatMultipliers()`: Full stat synthesis pipeline
+  - `completeForge()`: Atomic forge completion with item creation
+- [x] 13 passing tests (11 feature + 1 unit + 1 risky) — 82 assertions
+
+#### Phase 4: API & Controller
+- [x] ForgeController.index(): Display Forge page with player inventory
+- [x] ForgeController.init(): Validate Rule of 3, consume ores, create session
+- [x] ForgeController.complete(): Validate ownership, compute scores, persist item
+- [x] ForgeInitRequest: Validates 3 ores array with ore_type_id, quantity
+- [x] ForgeCompleteRequest: Validates forge_session_id and scores 0-100
+- [x] Route registration: GET /forge, POST /forge/init, POST /forge/complete
+
+#### Phase 4: Frontend Integration
+- [x] resources/js/pages/Forge/Index.vue: Main page with state machine (selection → smelting → smithing → quenching → result)
+- [x] resources/js/components/Forge/OreSelector.vue: Ore selection UI with Rule of 3 enforcement and potential quality preview
+- [x] resources/js/components/Forge/ForgeProgress.vue: Visual progress tracker with stage indicators
+- [x] resources/js/components/Forge/SmellingStage.vue: Bellows drag mechanic tracking "Time in Sweet Spot"
+- [x] resources/js/components/Forge/SmithingStage.vue: Rhythm circles (5-10) with Perfect/Good/Miss timing
+- [x] resources/js/components/Forge/QuenchingStage.vue: Temperature cooling bar with needle positioning
+- [x] resources/js/components/Forge/ItemCrafted.vue: Result modal with Grade (I-X), Final Stats, and item acquisition
+- [x] Updated AppSidebar.vue: Added Forge navigation link
+- [x] Frontend build: npm run build completed successfully with Wayfinder types generated
+
 ### Backend (Remaining)
-- [ ] Implement `ForgeEngine` service class (Forge Signature hash + stat calculation)
-- [ ] Implement `POST /api/forge/begin`, `/smelting`, `/smithing`, `/quench` endpoints
 - [ ] Implement equipment endpoints: equip/unequip item
 - [ ] Implement effective-stats query (base + equipment bonuses)
 
