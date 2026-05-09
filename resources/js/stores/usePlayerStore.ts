@@ -12,6 +12,7 @@ export const usePlayerStore = defineStore('player', () => {
     const userId = ref<number | null>(null);
     const level = ref<number>(1);
     const experience = ref<number>(0);
+    const gold = ref<number>(0);
     const nextLevelExp = ref<number>(100);
     const hp = ref<number>(100);
     const maxHp = ref<number>(100);
@@ -21,13 +22,14 @@ export const usePlayerStore = defineStore('player', () => {
     const currentPickaxe = ref<Pickaxe | null>(null);
 
     function initialize(
-        player: { id: number; level: number; experience: number; next_level_exp: number },
+        player: { id: number; level: number; experience: number; gold: number; next_level_exp: number },
         stats: { stamina: number; stamina_last_updated_at: string; hp: number },
         pickaxe?: Pickaxe | null,
     ): void {
         userId.value = player.id;
         level.value = player.level;
         experience.value = player.experience;
+        gold.value = player.gold;
         nextLevelExp.value = player.next_level_exp;
         hp.value = stats.hp;
         stamina.value = stats.stamina;
@@ -48,6 +50,10 @@ export const usePlayerStore = defineStore('player', () => {
         experience.value += amount;
     }
 
+    function setGold(value: number): void {
+        gold.value = Math.max(0, Math.floor(value));
+    }
+
     function setHp(value: number): void {
         hp.value = Math.max(0, Math.min(maxHp.value, value));
     }
@@ -60,6 +66,7 @@ export const usePlayerStore = defineStore('player', () => {
         userId,
         level,
         experience,
+        gold,
         nextLevelExp,
         hp,
         maxHp,
@@ -70,6 +77,7 @@ export const usePlayerStore = defineStore('player', () => {
         applyStaminaUpdate,
         applyLevelUp,
         addExp,
+        setGold,
         setHp,
         equipPickaxe,
     };

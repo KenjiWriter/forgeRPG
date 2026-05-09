@@ -6,6 +6,7 @@ use App\Models\Island;
 use App\Models\LevelDefinition;
 use App\Models\MiningNode;
 use App\Models\PlayerStat;
+use App\Services\InventoryPricingService;
 use App\Services\MiningService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,6 +14,11 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    public function __construct(
+        private readonly MiningService $miningService,
+        private readonly InventoryPricingService $inventoryPricingService,
+    ) {}
+
     public function show(Request $request): Response
     {
         $user = $request->user()->load(['stats', 'currentIsland', 'equipmentSlots.item']);
@@ -49,7 +55,7 @@ class DashboardController extends Controller
             : null;
 
         if ($node === null && $island !== null) {
-            app(MiningService::class)->spawnNodesForIsland($island);
+            $this->miningService->spawnNodesForIsland($island);
 
             $node = MiningNode::where('island_id', $island->id)
                 ->where('current_hp', '>', 0)
@@ -74,6 +80,7 @@ class DashboardController extends Controller
                         'name' => $holdable->name,
                         'quantity' => $slot->quantity,
                         'holdable_type' => 'item',
+                        'base_sell_price' => $this->inventoryPricingService->resolveInventoryUnitPrice($slot),
                         'forge_grade' => $holdable->forge_grade,
                         'target_slot' => $holdable->target_slot,
                         'elemental_affinity' => $holdable->elemental_affinity,
@@ -87,6 +94,7 @@ class DashboardController extends Controller
                     'name' => $holdable->name,
                     'quantity' => $slot->quantity,
                     'holdable_type' => 'ore',
+                    'base_sell_price' => $this->inventoryPricingService->resolveInventoryUnitPrice($slot),
                     'rarity' => $holdable->rarity ?? 'common',
                 ];
             });
@@ -101,6 +109,7 @@ class DashboardController extends Controller
                 'name' => $user->name,
                 'level' => $user->level,
                 'experience' => $user->experience,
+                'gold' => $user->gold,
                 'next_level_exp' => $nextLevelDef?->exp_required ?? ($user->experience + 100),
             ],
             'player_stats' => [

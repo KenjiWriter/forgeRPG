@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import { useEcho, useEchoPresence } from '@laravel/echo-vue';
 import { useIntervalFn } from '@vueuse/core';
 import axios from 'axios';
 import { usePlayerStore } from '@/stores/usePlayerStore';
-import { hit } from '@/actions/App/Http/Controllers/Mining/MiningController';
-import { equip as inventoryEquip, sell as inventorySell } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
-import { dashboard } from '@/routes';
+import { collect, hit } from '@/actions/App/Http/Controllers/Mining/MiningController';
+import { equip as inventoryEquip } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
 import { ChevronDown, ChevronUp } from 'lucide-vue-next';
-import InventoryTooltip, { type InventoryItemData } from '@/components/Inventory/InventoryTooltip.vue';
+import InventoryTooltip, {
+    type InventoryItemData,
+    type InventorySaleSuccessPayload,
+} from '@/components/Inventory/InventoryTooltip.vue';
 
 interface Player {
     id: number;
     name: string;
     level: number;
     experience: number;
+    gold: number;
     next_level_exp: number;
 }
 
@@ -110,20 +114,30 @@ async function handleEquip(inventoryId: number): Promise<void> {
     }
 }
 
-async function handleSell(inventoryId: number): Promise<void> {
+function handleSold(payload: InventorySaleSuccessPayload): void {
     tooltip.value = null;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-    try {
-        await axios.post(inventorySell.url(inventoryId), {}, { withXSRFToken: true });
-        inventory.value = inventory.value.filter((i) => i.inventory_id !== inventoryId);
-    } catch {
-        // Sell errors are non-critical for now
+
+    const soldItem = inventory.value.find((i) => i.inventory_id === payload.inventoryId);
+    const soldItemName = soldItem?.name ?? 'Item';
+
+    if (soldItem) {
+        if (payload.remainingQuantity > 0) {
+            soldItem.quantity = payload.remainingQuantity;
+        } else {
+            inventory.value = inventory.value.filter((i) => i.inventory_id !== payload.inventoryId);
+        }
     }
+
+    playerStore.setGold(payload.gold);
+    toast.success(`${soldItemName} sold for ${payload.totalValue} Gold`);
 }
 
 // Visual effects state
 const flyingNumbers = ref<FlyingNumber[]>([]);
 const isHitting = ref(false);
+const isCollecting = ref(false);
+const isCrumbling = ref(false);
 const flashNode = ref(false);
 let flyingNumberCounter = 0;
 
@@ -252,7 +266,7 @@ function itemBorderClass(item: InventoryItem): string {
 
 // Mining hit
 async function onNodeClick(event: MouseEvent): Promise<void> {
-    if (!node.value || node.value.is_respawning || isHitting.value || displayStamina.value < 10) {
+    if (!node.value || node.value.is_respawning || isHitting.value || isCollecting.value || displayStamina.value < 10) {
         return;
     }
 
@@ -272,7 +286,7 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
             node_hp_remaining: number;
             is_destroyed: boolean;
             stamina_remaining: number;
-            loot: Array<{ ore_id: number; name: string }> | null;
+            loot: null;
             exp_gained: number;
             level_up: boolean;
         }>(hit.url(), {
@@ -295,34 +309,73 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
             node.value.current_hp = data.node_hp_remaining;
         }
 
-        if (data.exp_gained > 0) {
-            playerStore.addExp(data.exp_gained);
-        }
-
-        // Merge any loot drops into the inventory
-        if (data.loot?.length) {
-            for (const drop of data.loot) {
-                const existing = inventory.value.find(
-                    (i) => i.holdable_type === 'ore' && i.id === drop.ore_id,
-                );
-                if (existing) {
-                    existing.quantity++;
-                } else {
-                    inventory.value.push({
-                        inventory_id: drop.ore_id,
-                        id: drop.ore_id,
-                        name: drop.name,
-                        quantity: 1,
-                        holdable_type: 'ore',
-                        rarity: drop.rarity ?? 'common',
-                    });
-                }
-            }
+        // Destruction is now a second phase: collect loot and spawn the next node.
+        if (node.value && node.value.current_hp <= 0) {
+            await collectDestroyedNode(node.value.id);
         }
     } catch {
         // Node unavailable or stamina exhausted — server error is authoritative
     } finally {
         isHitting.value = false;
+    }
+}
+
+async function collectDestroyedNode(nodeId: number): Promise<void> {
+    if (isCollecting.value) {
+        return;
+    }
+
+    isCollecting.value = true;
+    isCrumbling.value = true;
+
+    try {
+        const response = await axios.post<{
+            loot: Array<{ inventory_id: number; ore_id: number; name: string; quantity: number; rarity?: string; base_sell_price?: number }>;
+            exp_gained: number;
+            level_up: boolean;
+            next_node: MiningNode | null;
+        }>(collect.url(), {
+            node_id: nodeId,
+        });
+
+        const data = response.data;
+
+        if (data.exp_gained > 0) {
+            playerStore.addExp(data.exp_gained);
+        }
+
+        if (data.loot.length) {
+            for (const drop of data.loot) {
+                const existing = inventory.value.find(
+                    (i) => i.holdable_type === 'ore' && i.id === drop.ore_id,
+                );
+
+                if (existing) {
+                    existing.quantity += drop.quantity;
+                } else {
+                    inventory.value.push({
+                        inventory_id: drop.inventory_id,
+                        id: drop.ore_id,
+                        name: drop.name,
+                        quantity: drop.quantity,
+                        holdable_type: 'ore',
+                        base_sell_price: drop.base_sell_price ?? 1,
+                        rarity: drop.rarity ?? 'common',
+                    });
+                }
+            }
+        }
+
+        node.value = null;
+
+        setTimeout(() => {
+            node.value = data.next_node;
+            isCrumbling.value = false;
+            isCollecting.value = false;
+        }, 900);
+    } catch {
+        isCrumbling.value = false;
+        isCollecting.value = false;
     }
 }
 </script>
@@ -342,9 +395,17 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
                     {{ playerStore.level }}
                 </div>
                 <div class="flex flex-col gap-1">
-                    <span class="text-xs font-medium text-muted-foreground"
-                        >Level {{ playerStore.level }}</span
-                    >
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-medium text-muted-foreground"
+                            >Level {{ playerStore.level }}</span
+                        >
+                        <span
+                            class="inline-flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-[11px] font-semibold text-yellow-300"
+                        >
+                            <span aria-hidden="true">🪙</span>
+                            {{ playerStore.gold }} Gold
+                        </span>
+                    </div>
                     <div class="h-2 w-44 overflow-hidden rounded-full bg-muted">
                         <div
                             class="h-full bg-yellow-500 transition-all duration-300"
@@ -386,12 +447,12 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
                     <!-- Ore node — clickable -->
                     <div
                         class="relative cursor-pointer select-none"
-                        :class="{ 'pointer-events-none': isHitting }"
+                        :class="{ 'pointer-events-none': isHitting || isCollecting }"
                         @click="onNodeClick"
                     >
                         <div
                             class="flex h-52 w-52 items-center justify-center rounded-full border-4 border-stone-600 bg-stone-800 text-8xl shadow-2xl transition-transform duration-75 hover:scale-105 active:scale-95 dark:border-stone-500 dark:bg-stone-900"
-                            :class="{ 'animate-flash': flashNode }"
+                            :class="{ 'animate-flash': flashNode, 'animate-crumble': isCrumbling }"
                         >
                             🪨
                         </div>
@@ -513,7 +574,7 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
                     @mouseenter="cancelHide"
                     @mouseleave="scheduleHide"
                     @equip="handleEquip"
-                    @sell="handleSell"
+                    @sold="handleSold"
                 />
             </Teleport>
         </div>
@@ -620,6 +681,30 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
 
 .animate-weak-shake {
     animation: weak-shake 0.4s ease-in-out infinite;
+}
+
+@keyframes crumble {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+    }
+    20% {
+        transform: translate(-2px, 1px) scale(1.01);
+    }
+    40% {
+        transform: translate(3px, -2px) scale(0.99);
+    }
+    60% {
+        transform: translate(-2px, 2px) scale(0.97);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(0, 10px) scale(0.9);
+    }
+}
+
+.animate-crumble {
+    animation: crumble 0.9s ease-in forwards;
 }
 </style>
 

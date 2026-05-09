@@ -35,6 +35,7 @@ class UserFactory extends Factory
             'two_factor_confirmed_at' => null,
             'level' => 1,
             'experience' => 0,
+            'gold' => 0,
         ];
     }
 

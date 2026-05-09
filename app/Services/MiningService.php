@@ -36,7 +36,7 @@ class MiningService
      *     node_hp_remaining: int,
      *     is_destroyed: bool,
      *     stamina_remaining: float,
-     *     loot: list<array{ore_id: int, name: string}>|null,
+        *     loot: null,
      *     exp_gained: int,
      *     new_player_exp: int,
      *     level_up: bool
@@ -59,7 +59,7 @@ class MiningService
 
         // Linear scaling: FinalDamage = BaseDamage * (CurrentStamina / 100)
         // A hit at 50% stamina deals exactly 50% of base damage.
-        $multiplier  = $effectiveStamina / 100.0;
+        $multiplier = $effectiveStamina / 100.0;
         $pickaxePower = $equippedPickaxe?->mining_dmg_bonus ?? 5;
         $damage = max(1, (int) round(($pickaxePower + $stats->mining_speed) * $multiplier));
 
@@ -78,45 +78,76 @@ class MiningService
         broadcast(new NodeUpdated($node->id, $newHp, $node->island_id));
         broadcast(new StaminaUpdated($user->id, $newStamina, $staminaUpdatedAt));
 
-        $loot = null;
-        $expGained = 0;
-        $levelUp = false;
-        $newPlayerExp = $user->experience;
-
-        if ($newHp === 0) {
-            $loot = $this->rollNodeLoot($node, $user, $equippedPickaxe);
-
-            $expGained = $node->nodeType->tier * 10;
-            $newPlayerExp = $user->experience + $expGained;
-            $previousLevel = $user->level;
-
-            $user->experience = $newPlayerExp;
-            $newLevel = $this->calculateLevel($newPlayerExp);
-
-            if ($newLevel > $previousLevel) {
-                $user->level = $newLevel;
-                $levelUp = true;
-                broadcast(new LevelUp($user->id, $newLevel));
-            }
-
-            $user->save();
-
-            $respawnsAt = CarbonImmutable::now()->addMinutes($node->nodeType->respawn_minutes);
-            $node->respawns_at = $respawnsAt;
-            $node->save();
-
-            broadcast(new NodeDepleted($node->id, $respawnsAt, $node->nodeType->slug, $node->island_id));
-        }
-
         return [
             'damage_dealt' => $damage,
             'node_hp_remaining' => $newHp,
             'is_destroyed' => $newHp === 0,
             'stamina_remaining' => $newStamina,
+            'loot' => null,
+            'exp_gained' => 0,
+            'new_player_exp' => $user->experience,
+            'level_up' => false,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     loot: list<array{inventory_id: int, ore_id: int, name: string, quantity: int, rarity: string, base_sell_price: int}>,
+     *     exp_gained: int,
+     *     new_player_exp: int,
+     *     level_up: bool,
+     *     next_node: array{id: int, max_hp: int, current_hp: int, is_respawning: bool, respawns_at: null, node_type: array{slug: string, name: string, tier: int}}|null
+     * }
+     */
+    public function collect(User $user, MiningNode $node): array
+    {
+        $node->loadMissing(['nodeType.oreTypes', 'island.nodeTypes']);
+
+        if ($user->current_island_id !== null && $user->current_island_id !== $node->island_id) {
+            abort(403, 'You can only collect from your current island node.');
+        }
+
+        if ($node->current_hp > 0) {
+            abort(422, 'This node has not been destroyed yet.');
+        }
+
+        if ($node->respawns_at !== null) {
+            abort(422, 'This node has already been collected.');
+        }
+
+        $equippedPickaxe = $this->getEquippedPickaxe($user);
+        $loot = $this->rollNodeLoot($node, $user, $equippedPickaxe);
+
+        $expGained = $node->nodeType->tier * 10;
+        $newPlayerExp = $user->experience + $expGained;
+        $previousLevel = $user->level;
+
+        $user->experience = $newPlayerExp;
+        $newLevel = $this->calculateLevel($newPlayerExp);
+        $levelUp = false;
+
+        if ($newLevel > $previousLevel) {
+            $user->level = $newLevel;
+            $levelUp = true;
+            broadcast(new LevelUp($user->id, $newLevel));
+        }
+
+        $user->save();
+
+        $respawnsAt = CarbonImmutable::now()->addMinutes($node->nodeType->respawn_minutes);
+        $node->respawns_at = $respawnsAt;
+        $node->save();
+
+        broadcast(new NodeDepleted($node->id, $respawnsAt, $node->nodeType->slug, $node->island_id));
+
+        $nextNode = $node->island ? $this->spawnRandomNodeForIsland($node->island) : null;
+
+        return [
             'loot' => $loot,
             'exp_gained' => $expGained,
             'new_player_exp' => $newPlayerExp,
             'level_up' => $levelUp,
+            'next_node' => $nextNode ? $this->serializeNode($nextNode) : null,
         ];
     }
 
@@ -142,7 +173,7 @@ class MiningService
     }
 
     /**
-     * @return list<array{ore_id: int, name: string}>
+     * @return list<array{inventory_id: int, ore_id: int, name: string, quantity: int, rarity: string, base_sell_price: int}>
      */
     private function rollNodeLoot(MiningNode $node, User $user, ?Item $pickaxe): array
     {
@@ -155,15 +186,23 @@ class MiningService
             $roll = random_int(1, $adjustedChance);
 
             if ($roll === 1) {
-                $this->addToInventory($user->id, $ore);
-                $loot[] = ['ore_id' => $ore->id, 'name' => $ore->name];
+                $quantity = random_int(3, 5);
+                $inventory = $this->addToInventory($user->id, $ore, $quantity);
+                $loot[] = [
+                    'inventory_id' => $inventory->id,
+                    'ore_id' => $ore->id,
+                    'name' => $ore->name,
+                    'quantity' => $quantity,
+                    'rarity' => $ore->rarity,
+                    'base_sell_price' => $ore->price,
+                ];
             }
         }
 
         return $loot;
     }
 
-    private function addToInventory(int $userId, OreType $ore): void
+    private function addToInventory(int $userId, OreType $ore, int $quantity): Inventory
     {
         $existing = Inventory::where('user_id', $userId)
             ->where('holdable_type', OreType::class)
@@ -171,15 +210,58 @@ class MiningService
             ->first();
 
         if ($existing) {
-            $existing->increment('quantity');
+            $existing->increment('quantity', $quantity);
+
+            return $existing->refresh();
         } else {
-            Inventory::create([
+            return Inventory::create([
                 'user_id' => $userId,
                 'holdable_type' => OreType::class,
                 'holdable_id' => $ore->id,
-                'quantity' => 1,
+                'quantity' => $quantity,
             ]);
         }
+    }
+
+    private function spawnRandomNodeForIsland(Island $island): ?MiningNode
+    {
+        $randomNodeType = $island->nodeTypes()->inRandomOrder()->first();
+
+        if ($randomNodeType === null) {
+            return null;
+        }
+
+        $newNode = MiningNode::create([
+            'island_id' => $island->id,
+            'node_type_id' => $randomNodeType->id,
+            'max_hp' => $randomNodeType->base_hp,
+            'current_hp' => $randomNodeType->base_hp,
+            'respawns_at' => null,
+        ]);
+
+        $newNode->load('nodeType');
+        broadcast(new NodeSpawned($newNode));
+
+        return $newNode;
+    }
+
+    /**
+     * @return array{id: int, max_hp: int, current_hp: int, is_respawning: bool, respawns_at: null, node_type: array{slug: string, name: string, tier: int}}
+     */
+    private function serializeNode(MiningNode $node): array
+    {
+        return [
+            'id' => $node->id,
+            'max_hp' => $node->max_hp,
+            'current_hp' => $node->current_hp,
+            'is_respawning' => false,
+            'respawns_at' => null,
+            'node_type' => [
+                'slug' => $node->nodeType->slug,
+                'name' => $node->nodeType->name,
+                'tier' => $node->nodeType->tier,
+            ],
+        ];
     }
 
     private function calculateLevel(int $experience): int
@@ -212,11 +294,11 @@ class MiningService
 
             for ($i = 0; $i < $needed; $i++) {
                 $newNode = MiningNode::create([
-                    'island_id'    => $island->id,
+                    'island_id' => $island->id,
                     'node_type_id' => $nodeType->id,
-                    'max_hp'       => $nodeType->base_hp,
-                    'current_hp'   => $nodeType->base_hp,
-                    'respawns_at'  => null,
+                    'max_hp' => $nodeType->base_hp,
+                    'current_hp' => $nodeType->base_hp,
+                    'respawns_at' => null,
                 ]);
 
                 // Broadcast to presence channel so connected clients hot-swap

@@ -37,8 +37,8 @@
 - Active click-driven mini-game gated by a **stamina bar** (max 100 pts, regenerates 10 pts/sec).
 - Each click deals `Final Mining DMG = (Pickaxe.mining_dmg_bonus + Player.mining_speed_stat) * Stamina Multiplier`.
 - Stamina multiplier: ≥80% → 1.00×, 50–79% → 0.75×, 20–49% → 0.50×, <20% → 0.25×.
-- Mining nodes have `current_hp` / `max_hp`. **Loot drops ONLY when `current_hp` reaches 0 (node destroyed)** — not per click.
-- On destruction: server runs a Loot Roll for each ore eligible from that node type (see Mining Loot Drop Logic).
+- Mining nodes have `current_hp` / `max_hp`. **Loot drops ONLY when `current_hp` reaches 0 and the player performs collect** — not per click.
+- On destruction: server marks node as destroyed; on collect, server runs a Loot Roll for each ore eligible from that node type (see Mining Loot Drop Logic).
 - Node HP and stamina are broadcast in real-time via **Laravel Reverb**.
 
 ### Forging
@@ -64,7 +64,7 @@
 > All FK columns should have `_id` suffix and reference the parent table's `id`.
 
 ### `users`
-Already exists. **Add columns**: `experience` (unsignedBigInteger, default 0), `level` (unsignedSmallInteger, default 1), `current_island_id` (FK → islands, nullable).
+Already exists. **Add columns**: `experience` (unsignedBigInteger, default 0), `gold` (unsignedBigInteger, default 0), `level` (unsignedSmallInteger, default 1), `current_island_id` (FK → islands, nullable).
 
 ### `player_stats`
 One row per user. Stores base stat values before equipment bonuses are applied.
@@ -269,11 +269,11 @@ Seeded config table for EXP thresholds per level.
 
 ### When Loot Triggers
 
-**Loot drops ONLY when a node's `current_hp` reaches 0.** No ore is awarded per-click. This is authoritative server logic; the client never determines loot.
+**Loot drops ONLY when a node's `current_hp` reaches 0 and the collect action is confirmed server-side.** No ore is awarded per-click. This is authoritative server logic; the client never determines loot.
 
 ### Loot Roll Algorithm
 
-When a node is destroyed, the server executes the following for the destroying player:
+When a node is destroyed and collected, the server executes the following for the collecting player:
 
 ```
 function rollNodeLoot(node, player):
@@ -289,9 +289,9 @@ function rollNodeLoot(node, player):
     roll               = random_int(1, adjusted_chance)  // inclusive
 
     if roll == 1:
-      loot_awarded.append(ore)
-      INSERT INTO inventories (user_id, holdable_type='ore_type', holdable_id=ore.id, quantity=1)
-      // quantity is always 1 per successful roll in this design
+      quantity = random_int(3, 5)
+      loot_awarded.append({ ore, quantity })
+      INSERT INTO inventories (user_id, holdable_type='ore_type', holdable_id=ore.id, quantity += quantity)
 
   exp_gained = calculateExpForNode(node.nodeType.tier)
   UPDATE users SET experience = experience + exp_gained
@@ -326,7 +326,7 @@ Base Node EXP = node_types.tier * 10   (e.g., tier 3 Boulder = 30 EXP)
 
 ### Next Node Spawn
 
-After loot is resolved:
+After collect is resolved:
 1. Set `mining_nodes.respawns_at = NOW() + node_types.respawn_minutes`
 2. Broadcast `NodeDepleted { node_id, respawns_at, next_node_type_slug }` via Reverb.
 3. `next_node_type_slug` is always the **same type** as the destroyed node (nodes respawn as the same type). Variation is a future feature.
@@ -437,17 +437,14 @@ Player clicks a Mining Node
     9. Persist node.current_hp, player.stamina, player.stamina_last_updated_at
     10. Broadcast via Reverb: NodeUpdated { node_id, current_hp }
     11. Broadcast via Reverb: StaminaUpdated { user_id, stamina }
-    12. IF node.current_hp == 0:  ← LOOT ONLY HERE
-          a. Load eligible ores: node_type_ore_sources WHERE node_type_id = node.node_type_id
-          b. Load player luck_boost from equipped pickaxe
-          c. Run rollNodeLoot(node, player) — see Mining Loot Drop Logic
-          d. For each dropped ore: INSERT/INCREMENT inventories row
-          e. Award EXP (tier * 10 base) → check level threshold → update users.experience / level
-          f. Broadcast LevelUp if threshold crossed
-          g. Set node.respawns_at = NOW() + node_types.respawn_minutes
-          h. Broadcast: NodeDepleted { node_id, respawns_at, next_node_type_slug: node.nodeType.slug }
+    12. IF node.current_hp == 0: return destroyed=true, loot=null, exp=0
+    13. Client sends POST /api/mining/collect { node_id }
+    14. Server verifies node.current_hp == 0 AND node.respawns_at is null (not already collected)
+    15. Server resolves loot + EXP + level checks, then sets node.respawns_at and broadcasts NodeDepleted
+    16. Server spawns a fresh random node for the island and broadcasts NodeSpawned
   → Client receives response:
-      { dmg_dealt, stamina_remaining, node_destroyed: bool, loot: [{ ore_id, name }] | null }
+      hit: { dmg_dealt, stamina_remaining, node_destroyed: bool, loot: null }
+      collect: { loot: [{ ore_id, quantity, name }], exp_gained, level_up, next_node }
 ```
 
 ### Forging Session

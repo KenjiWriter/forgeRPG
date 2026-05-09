@@ -2,6 +2,7 @@
 
 use App\Events\LevelUp;
 use App\Events\NodeDepleted;
+use App\Events\NodeSpawned;
 use App\Events\NodeUpdated;
 use App\Events\StaminaUpdated;
 use App\Models\Island;
@@ -13,7 +14,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
-    Event::fake([NodeUpdated::class, NodeDepleted::class, StaminaUpdated::class, LevelUp::class]);
+    Event::fake([NodeUpdated::class, NodeDepleted::class, NodeSpawned::class, StaminaUpdated::class, LevelUp::class]);
 });
 
 test('guests cannot hit a mining node', function () {
@@ -31,7 +32,7 @@ test('hit request validates required fields', function () {
     $this->actingAs($user)
         ->postJson(route('mining.hit'), [])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['node_id', 'stamina_percent']);
+        ->assertJsonValidationErrors(['node_id']);
 });
 
 test('hit request validates node_id exists', function () {
@@ -40,7 +41,6 @@ test('hit request validates node_id exists', function () {
     $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => 99999,
-            'stamina_percent' => 100,
         ])->assertUnprocessable()
         ->assertJsonValidationErrors(['node_id']);
 });
@@ -61,7 +61,6 @@ test('a hit reduces node hp and returns correct structure', function () {
     $response = $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 100,
         ])->assertOk()
         ->assertJsonStructure([
             'damage_dealt',
@@ -99,14 +98,13 @@ test('NodeUpdated and StaminaUpdated are broadcast on every hit', function () {
     $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 100,
         ])->assertOk();
 
     Event::assertDispatched(NodeUpdated::class, fn ($e) => $e->nodeId === $node->id);
     Event::assertDispatched(StaminaUpdated::class, fn ($e) => $e->userId === $user->id);
 });
 
-test('destroying a node awards loot, exp, and broadcasts NodeDepleted', function () {
+test('destroying a node via hit returns destroyed state but no loot before collect', function () {
     $user = User::factory()->create();
     $user->stats->update(['stamina' => 100, 'stamina_last_updated_at' => now()]);
 
@@ -126,12 +124,60 @@ test('destroying a node awards loot, exp, and broadcasts NodeDepleted', function
     $response = $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 100,
         ])->assertOk();
 
     expect($response->json('is_destroyed'))->toBeTrue();
-    expect($response->json('exp_gained'))->toBe(20); // tier 2 * 10
+    expect($response->json('exp_gained'))->toBe(0);
     expect($response->json('node_hp_remaining'))->toBe(0);
+    expect($response->json('loot'))->toBeNull();
+
+    $this->assertDatabaseHas('mining_nodes', [
+        'id' => $node->id,
+        'current_hp' => 0,
+    ]);
+
+    $this->assertDatabaseHas('mining_nodes', [
+        'id' => $node->id,
+        'respawns_at' => null,
+    ]);
+
+    Event::assertNotDispatched(NodeDepleted::class);
+});
+
+test('collecting a destroyed node awards loot, exp, and broadcasts NodeDepleted', function () {
+    $user = User::factory()->create();
+    $user->stats->update(['stamina' => 100, 'stamina_last_updated_at' => now()]);
+
+    LevelDefinition::create(['level' => 1, 'exp_required' => 0, 'unlock_note' => null]);
+
+    $ore = OreType::factory()->guaranteed()->create();
+    $nodeType = NodeType::factory()->create(['tier' => 2, 'respawn_minutes' => 5]);
+    $nodeType->oreTypes()->attach($ore->id);
+
+    $island = Island::factory()->create();
+    $user->update(['current_island_id' => $island->id]);
+
+    $node = MiningNode::factory()->create([
+        'island_id' => $island->id,
+        'node_type_id' => $nodeType->id,
+        'max_hp' => 100,
+        'current_hp' => 0,
+        'respawns_at' => null,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->postJson(route('mining.collect'), [
+            'node_id' => $node->id,
+        ])->assertOk()
+        ->assertJsonStructure([
+            'loot',
+            'exp_gained',
+            'new_player_exp',
+            'level_up',
+            'next_node',
+        ]);
+
+    expect($response->json('exp_gained'))->toBe(20);
     expect($response->json('loot'))->toBeArray()->not->toBeEmpty();
 
     $this->assertDatabaseHas('inventories', [
@@ -140,38 +186,37 @@ test('destroying a node awards loot, exp, and broadcasts NodeDepleted', function
         'holdable_id' => $ore->id,
     ]);
 
-    $this->assertDatabaseHas('mining_nodes', [
-        'id' => $node->id,
-        'current_hp' => 0,
-    ]);
-
     $this->assertDatabaseMissing('mining_nodes', [
         'id' => $node->id,
         'respawns_at' => null,
     ]);
 
     Event::assertDispatched(NodeDepleted::class, fn ($e) => $e->nodeId === $node->id);
+    Event::assertDispatched(NodeSpawned::class);
 });
 
-test('destroying a node that triggers level up broadcasts LevelUp', function () {
+test('collecting a destroyed node that triggers level up broadcasts LevelUp', function () {
     $user = User::factory()->create();
     $user->stats->update(['stamina' => 100, 'stamina_last_updated_at' => now()]);
 
     LevelDefinition::create(['level' => 1, 'exp_required' => 0, 'unlock_note' => null]);
     LevelDefinition::create(['level' => 2, 'exp_required' => 10, 'unlock_note' => null]);
 
-    $nodeType = NodeType::factory()->create(['tier' => 2, 'respawn_minutes' => 5]); // 20 EXP
+    $nodeType = NodeType::factory()->create(['tier' => 2, 'respawn_minutes' => 5]);
     $island = Island::factory()->create();
-    $node = MiningNode::factory()->almostDead(1)->create([
+    $user->update(['current_island_id' => $island->id]);
+
+    $node = MiningNode::factory()->create([
         'island_id' => $island->id,
         'node_type_id' => $nodeType->id,
         'max_hp' => 100,
+        'current_hp' => 0,
+        'respawns_at' => null,
     ]);
 
     $response = $this->actingAs($user)
-        ->postJson(route('mining.hit'), [
+        ->postJson(route('mining.collect'), [
             'node_id' => $node->id,
-            'stamina_percent' => 100,
         ])->assertOk();
 
     expect($response->json('level_up'))->toBeTrue();
@@ -188,8 +233,34 @@ test('cannot hit a node that is respawning', function () {
     $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 100,
         ])->assertUnprocessable();
+});
+
+test('collect request validates required fields', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('mining.collect'), [])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['node_id']);
+});
+
+test('cannot collect node that is not destroyed', function () {
+    $user = User::factory()->create();
+    $island = Island::factory()->create();
+    $user->update(['current_island_id' => $island->id]);
+
+    $nodeType = NodeType::factory()->create(['tier' => 1, 'respawn_minutes' => 5]);
+    $node = MiningNode::factory()->create([
+        'island_id' => $island->id,
+        'node_type_id' => $nodeType->id,
+        'current_hp' => 10,
+        'respawns_at' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('mining.collect'), ['node_id' => $node->id])
+        ->assertUnprocessable();
 });
 
 test('low stamina results in lower damage multiplier', function () {
@@ -213,7 +284,6 @@ test('low stamina results in lower damage multiplier', function () {
     $response = $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 6,
         ])->assertOk();
 
     // Pickaxe power=5, mining_speed=0, multiplier=0.25 (stamina<20) → dmg = round(5 * 0.25) = 1
@@ -234,6 +304,5 @@ test('cannot hit when stamina is below minimum threshold', function () {
     $this->actingAs($user)
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
-            'stamina_percent' => 3,
         ])->assertUnprocessable();
 });

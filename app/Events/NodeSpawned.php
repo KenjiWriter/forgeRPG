@@ -30,12 +30,12 @@ class NodeSpawned implements ShouldBroadcast
 
         return [
             'node' => [
-                'id'           => $this->node->id,
-                'max_hp'       => $this->node->max_hp,
-                'current_hp'   => $this->node->current_hp,
+                'id' => $this->node->id,
+                'max_hp' => $this->node->max_hp,
+                'current_hp' => $this->node->current_hp,
                 'is_respawning' => false,
-                'respawns_at'  => null,
-                'node_type'    => [
+                'respawns_at' => null,
+                'node_type' => [
                     'slug' => $type->slug,
                     'name' => $type->name,
                     'tier' => $type->tier,
