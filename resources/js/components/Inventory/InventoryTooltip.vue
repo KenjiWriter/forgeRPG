@@ -2,7 +2,7 @@
 import axios from 'axios';
 import { toast } from 'vue-sonner';
 import { computed, ref, watch } from 'vue';
-import { sellByItemId } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
+import { equipByItemId, sellByItemId } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
 import { formatExactNumber, formatNumber } from '@/lib/utils';
 
 export interface InventoryItemData {
@@ -29,6 +29,18 @@ export interface InventorySaleSuccessPayload {
     gold: number;
 }
 
+export interface InventoryEquipSuccessPayload {
+    inventoryId: number;
+    itemName: string;
+    slot: string;
+    equippedPickaxe: {
+        id: string;
+        name: string;
+        mining_power: number;
+        luck_bonus: number;
+    } | null;
+}
+
 const props = defineProps<{
     item: InventoryItemData;
     /** Right edge of the triggering item tile (client coords) */
@@ -40,7 +52,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    equip: [inventoryId: number];
+    equipped: [payload: InventoryEquipSuccessPayload];
     sold: [payload: InventorySaleSuccessPayload];
 }>();
 
@@ -107,6 +119,7 @@ const textClass = computed(() =>
 );
 
 const statLabels: Record<string, string> = {
+    mining_power: 'Mining Power',
     hp_bonus: 'HP',
     attack_bonus: 'ATK',
     defense_bonus: 'DEF',
@@ -125,6 +138,7 @@ const visibleStats = computed(() => {
 });
 
 const isEquippable = computed(() => props.item.holdable_type === 'item');
+const isEquipping = ref(false);
 const isSelling = ref(false);
 const sellQuantity = ref(1);
 const isSubmittingSale = ref(false);
@@ -208,6 +222,51 @@ async function confirmSell(): Promise<void> {
     }
 
     isSelling.value = false;
+}
+
+async function equipItem(): Promise<void> {
+    if (!isEquippable.value || isEquipping.value) {
+        return;
+    }
+
+    isEquipping.value = true;
+
+    try {
+        const response = await axios.post<{
+            message: string;
+            slot: string;
+            equipped_pickaxe: {
+                id: string;
+                name: string;
+                mining_power: number;
+                luck_bonus: number;
+            } | null;
+        }>(
+            equipByItemId.url(),
+            {
+                inventory_id: props.item.inventory_id,
+                item_id: props.item.id,
+            },
+            { withXSRFToken: true },
+        );
+
+        emit('equipped', {
+            inventoryId: props.item.inventory_id,
+            itemName: props.item.name,
+            slot: response.data.slot,
+            equippedPickaxe: response.data.equipped_pickaxe,
+        });
+
+        toast.success(`Equipped: ${props.item.name}`);
+    } catch (error) {
+        const message = axios.isAxiosError(error)
+            ? (error.response?.data?.message ?? 'Unable to equip item right now.')
+            : 'Unable to equip item right now.';
+
+        toast.error(message);
+    } finally {
+        isEquipping.value = false;
+    }
 }
 
 const tooltipStyle = computed(() => {
@@ -329,9 +388,10 @@ const tooltipStyle = computed(() => {
             <button
                 v-if="isEquippable"
                 class="flex-1 rounded bg-blue-600 px-2 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500 active:bg-blue-700"
-                @click.stop="emit('equip', item.inventory_id)"
+                :disabled="isEquipping"
+                @click.stop="equipItem"
             >
-                Equip
+                {{ isEquipping ? 'Equipping...' : 'Załóż' }}
             </button>
             <button
                 v-if="!isSelling"

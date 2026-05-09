@@ -233,6 +233,93 @@ test('a player can equip an item from their inventory', function () {
     expect(EquipmentSlot::where('user_id', $user->id)->where('slot', 'helmet')->first())
         ->not->toBeNull()
         ->item_id->toBe($item->id);
+
+    expect($item->fresh()?->equipped)->toBeTrue();
+});
+
+test('equipping another item in the same slot unequips the previous one', function () {
+    $user = User::factory()->create();
+
+    $oldPickaxe = Item::create([
+        'id' => Str::uuid(),
+        'player_id' => $user->id,
+        'name' => 'Starter Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 1,
+        'equipped' => true,
+        'elemental_affinity' => 'neutral',
+    ]);
+
+    $newPickaxe = Item::create([
+        'id' => Str::uuid(),
+        'player_id' => $user->id,
+        'name' => 'Iron Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 3,
+        'equipped' => false,
+        'mining_dmg_bonus' => 20,
+        'luck_bonus' => 10,
+        'elemental_affinity' => 'neutral',
+    ]);
+
+    EquipmentSlot::updateOrCreate(
+        ['user_id' => $user->id, 'slot' => 'pickaxe'],
+        ['item_id' => $oldPickaxe->id],
+    );
+
+    $inventory = Inventory::create([
+        'user_id' => $user->id,
+        'holdable_type' => Item::class,
+        'holdable_id' => $newPickaxe->id,
+        'quantity' => 1,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->postJson(route('inventory.equip', $inventory))
+        ->assertOk();
+
+    expect($oldPickaxe->fresh()?->equipped)->toBeFalse();
+    expect($newPickaxe->fresh()?->equipped)->toBeTrue();
+
+    expect(EquipmentSlot::where('user_id', $user->id)->where('slot', 'pickaxe')->first())
+        ->not->toBeNull()
+        ->item_id->toBe($newPickaxe->id);
+
+    $response->assertJsonPath('equipped_pickaxe.id', $newPickaxe->id);
+    $response->assertJsonPath('equipped_pickaxe.name', 'Iron Pickaxe');
+    $response->assertJsonPath('equipped_pickaxe.mining_power', 20);
+});
+
+test('a player can equip via api inventory equip endpoint', function () {
+    $user = User::factory()->create();
+    $item = Item::create([
+        'id' => Str::uuid(),
+        'player_id' => $user->id,
+        'name' => 'Steel Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 4,
+        'equipped' => false,
+        'mining_dmg_bonus' => 25,
+        'luck_bonus' => 12,
+        'elemental_affinity' => 'neutral',
+    ]);
+
+    $inventory = Inventory::create([
+        'user_id' => $user->id,
+        'holdable_type' => Item::class,
+        'holdable_id' => $item->id,
+        'quantity' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('inventory.equip.item'), [
+            'inventory_id' => $inventory->id,
+            'item_id' => $item->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('equipped_item.id', $item->id)
+        ->assertJsonPath('equipped_item.target_slot', 'pickaxe')
+        ->assertJsonPath('equipped_pickaxe.name', 'Steel Pickaxe');
 });
 
 test('equipping an ore returns a 422 error', function () {

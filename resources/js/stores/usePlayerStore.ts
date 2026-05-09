@@ -4,7 +4,7 @@ import { ref } from 'vue';
 interface Pickaxe {
     id: number;
     name: string;
-    mining_dmg_bonus: number;
+    mining_power: number;
     luck_bonus: number;
 }
 

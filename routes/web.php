@@ -4,6 +4,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Forge\ForgeController;
 use App\Http\Controllers\Inventory\InventoryController;
 use App\Http\Controllers\Mining\MiningController;
+use App\Http\Controllers\Shop\ShopController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -22,8 +23,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('forge/complete', [ForgeController::class, 'complete'])->name('forge.complete');
     Route::post('forge/acquire/{session}', [ForgeController::class, 'acquire'])->name('forge.acquire');
 
+    // Shop endpoints
+    Route::get('shop', [ShopController::class, 'index'])->name('shop');
+    Route::post('shop/purchase/{pickaxe}', [ShopController::class, 'purchase'])->name('shop.purchase');
+
     // Inventory endpoints
     Route::post('inventory/equip/{inventory}', [InventoryController::class, 'equip'])->name('inventory.equip');
+    Route::post('api/inventory/equip', [InventoryController::class, 'equipByItemId'])->name('inventory.equip.item');
     Route::post('inventory/sell/{inventory}', [InventoryController::class, 'sell'])->name('inventory.sell');
     Route::post('api/inventory/sell', [InventoryController::class, 'sellByItemId'])->name('inventory.sell.item');
 });

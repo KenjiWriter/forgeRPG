@@ -21,7 +21,7 @@ class DashboardController extends Controller
 
     public function show(Request $request): Response
     {
-        $user = $request->user()->load(['stats', 'currentIsland', 'equipmentSlots.item']);
+        $user = $request->user()->load(['stats', 'currentIsland']);
 
         /** @var PlayerStat $stats */
         $stats = $user->stats;
@@ -29,9 +29,11 @@ class DashboardController extends Controller
         $effectiveStamina = $this->computeStamina($stats);
         $now = now();
 
-        $equippedPickaxe = $user->equipmentSlots
-            ->firstWhere('slot', 'pickaxe')
-            ?->item;
+        $equippedPickaxe = $user->items()
+            ->where('target_slot', 'pickaxe')
+            ->where('equipped', true)
+            ->latest('created_at')
+            ->first();
 
         $island = $user->currentIsland;
 
@@ -137,7 +139,7 @@ class DashboardController extends Controller
             'equipped_pickaxe' => $equippedPickaxe ? [
                 'id' => $equippedPickaxe->id,
                 'name' => $equippedPickaxe->name,
-                'mining_dmg_bonus' => $equippedPickaxe->mining_dmg_bonus,
+                'mining_power' => $equippedPickaxe->mining_dmg_bonus,
                 'luck_bonus' => $equippedPickaxe->luck_bonus,
             ] : null,
         ]);

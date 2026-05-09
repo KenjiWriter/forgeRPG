@@ -10,12 +10,13 @@ class PickaxeSeeder extends Seeder
 {
     public function run(): void
     {
-        $forgottenKingdomId = Island::where('name', 'Forgotten Kingdom')->value('id');
-        $volcanicRiftId = Island::where('name', 'The Volcanic Rift')->value('id');
+        $forgottenKingdomId = Island::query()->where('name', 'Forgotten Kingdom')->value('id');
+        $volcanicRiftId = Island::query()->where('name', 'The Volcanic Rift')->value('id');
 
         $pickaxes = [
             [
                 'name' => 'Wooden Pickaxe',
+                'rarity' => 'common',
                 'price' => 0,
                 'power' => 5,
                 'luck_boost' => 0,
@@ -25,6 +26,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Stone Pickaxe',
+                'rarity' => 'uncommon',
                 'price' => 5000,
                 'power' => 12,
                 'luck_boost' => 5,
@@ -34,6 +36,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Iron Pickaxe',
+                'rarity' => 'rare',
                 'price' => 20000,
                 'power' => 22,
                 'luck_boost' => 10,
@@ -43,6 +46,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Golden Pickaxe',
+                'rarity' => 'epic',
                 'price' => 80000,
                 'power' => 38,
                 'luck_boost' => 20,
@@ -52,6 +56,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Diamond Pickaxe',
+                'rarity' => 'legendary',
                 'price' => 300000,
                 'power' => 60,
                 'luck_boost' => 35,
@@ -61,6 +66,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Mythril Pickaxe',
+                'rarity' => 'mythical',
                 'price' => 1200000,
                 'power' => 90,
                 'luck_boost' => 50,
@@ -70,6 +76,7 @@ class PickaxeSeeder extends Seeder
             ],
             [
                 'name' => 'Volcanic Pickaxe',
+                'rarity' => 'mythical',
                 'price' => 5000000,
                 'power' => 130,
                 'luck_boost' => 70,

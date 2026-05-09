@@ -286,7 +286,7 @@ test('low stamina results in lower damage multiplier', function () {
             'node_id' => $node->id,
         ])->assertOk();
 
-    // Pickaxe power=5, mining_speed=0, multiplier=0.11 → dmg = round(5 * 0.11) = 1
+    // Equipped pickaxe power defaults to 0, mining_speed=0, multiplier=0.11 → min damage clamps to 1
     expect($response->json('damage_dealt'))->toBe(1);
 });
 

@@ -59,4 +59,9 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Island::class, 'current_island_id');
     }
+
+    public function userItems(): HasMany
+    {
+        return $this->hasMany(UserItem::class);
+    }
 }

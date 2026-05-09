@@ -7,9 +7,9 @@ import { useIntervalFn } from '@vueuse/core';
 import axios from 'axios';
 import { usePlayerStore } from '@/stores/usePlayerStore';
 import { collect, hit } from '@/actions/App/Http/Controllers/Mining/MiningController';
-import { equip as inventoryEquip } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
 import { ChevronDown, ChevronUp } from 'lucide-vue-next';
 import InventoryTooltip, {
+    type InventoryEquipSuccessPayload,
     type InventoryItemData,
     type InventorySaleSuccessPayload,
 } from '@/components/Inventory/InventoryTooltip.vue';
@@ -55,7 +55,7 @@ interface InventoryItem extends InventoryItemData {}
 interface Pickaxe {
     id: number;
     name: string;
-    mining_dmg_bonus: number;
+    mining_power: number;
     luck_bonus: number;
 }
 
@@ -105,13 +105,14 @@ function cancelHide(): void {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
 }
 
-async function handleEquip(inventoryId: number): Promise<void> {
+function handleEquipped(payload: InventoryEquipSuccessPayload): void {
     tooltip.value = null;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-    try {
-        await axios.post(inventoryEquip.url(inventoryId), {}, { withXSRFToken: true });
-    } catch {
-        // Equip errors are non-critical for now
+
+    if (payload.equippedPickaxe) {
+        playerStore.equipPickaxe(payload.equippedPickaxe);
+    } else if (payload.slot === 'pickaxe') {
+        playerStore.currentPickaxe = null;
     }
 }
 
@@ -427,7 +428,11 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
 
             <div class="text-right">
                 <p class="text-xs text-muted-foreground">Pickaxe</p>
-                <p class="font-semibold">{{ equipped_pickaxe?.name ?? '—' }}</p>
+                <div v-if="playerStore.currentPickaxe" class="inline-flex items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1">
+                    <span aria-hidden="true">⛏️</span>
+                    <span class="font-semibold">{{ playerStore.currentPickaxe.name }}</span>
+                </div>
+                <p v-else class="font-semibold text-muted-foreground">No Pickaxe</p>
             </div>
         </div>
 
@@ -576,7 +581,7 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                     :anchor-left="tooltip.anchorLeft"
                     @mouseenter="cancelHide"
                     @mouseleave="scheduleHide"
-                    @equip="handleEquip"
+                    @equipped="handleEquipped"
                     @sold="handleSold"
                 />
             </Teleport>

@@ -24,27 +24,42 @@ class InventoryController extends Controller
     {
         $user = $request->user();
 
-        if ($inventory->user_id !== $user->id) {
-            abort(403);
+        return $this->equipResponse($user, $inventory);
+    }
+
+    public function equipByItemId(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'inventory_id' => ['nullable', 'integer'],
+            'item_id' => ['required'],
+        ]);
+
+        $inventory = null;
+
+        if (! empty($validated['inventory_id'])) {
+            $inventory = Inventory::query()
+                ->whereKey((int) $validated['inventory_id'])
+                ->where('user_id', $user->id)
+                ->with('holdable')
+                ->first();
         }
 
-        if ($inventory->holdable_type !== (new Item)->getMorphClass()) {
-            abort(422, 'Only items can be equipped.');
+        if ($inventory === null) {
+            $inventory = Inventory::query()
+                ->where('user_id', $user->id)
+                ->where('holdable_id', (string) $validated['item_id'])
+                ->where('holdable_type', Item::class)
+                ->with('holdable')
+                ->first();
         }
 
-        /** @var Item $item */
-        $item = $inventory->holdable;
-
-        if ($item === null) {
-            abort(404, 'Item not found.');
+        if ($inventory === null) {
+            abort(404, 'Inventory item not found.');
         }
 
-        EquipmentSlot::updateOrCreate(
-            ['user_id' => $user->id, 'slot' => $item->target_slot],
-            ['item_id' => $item->id],
-        );
-
-        return response()->json(['message' => 'Item equipped.', 'slot' => $item->target_slot]);
+        return $this->equipResponse($user, $inventory);
     }
 
     /**
@@ -166,6 +181,92 @@ class InventoryController extends Controller
             'sold_quantity' => $result['sold_quantity'],
             'remaining_quantity' => $result['remaining_quantity'],
             'gold' => $user->gold,
+        ]);
+    }
+
+    private function equipResponse(User $user, Inventory $inventory): JsonResponse
+    {
+        $result = DB::transaction(function () use ($inventory, $user): array {
+            $lockedInventory = Inventory::query()
+                ->whereKey($inventory->id)
+                ->with('holdable')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedInventory->user_id !== $user->id) {
+                abort(403);
+            }
+
+            if ($lockedInventory->holdable_type !== (new Item)->getMorphClass()) {
+                abort(422, 'Only items can be equipped.');
+            }
+
+            /** @var Item|null $item */
+            $item = Item::query()
+                ->whereKey((string) $lockedInventory->holdable_id)
+                ->where('player_id', $user->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($item === null) {
+                abort(404, 'Item not found.');
+            }
+
+            $slot = $item->target_slot;
+
+            Item::query()
+                ->where('player_id', $user->id)
+                ->where('target_slot', $slot)
+                ->where('equipped', true)
+                ->update(['equipped' => false]);
+
+            $item->equipped = true;
+            $item->save();
+
+            EquipmentSlot::updateOrCreate(
+                ['user_id' => $user->id, 'slot' => $slot],
+                ['item_id' => $item->id, 'updated_at' => now()],
+            );
+
+            $equipmentState = EquipmentSlot::query()
+                ->where('user_id', $user->id)
+                ->with('item')
+                ->get()
+                ->mapWithKeys(fn (EquipmentSlot $equipmentSlot) => [
+                    $equipmentSlot->slot => $equipmentSlot->item ? [
+                        'id' => $equipmentSlot->item->id,
+                        'name' => $equipmentSlot->item->name,
+                    ] : null,
+                ])
+                ->all();
+
+            $equippedPickaxe = Item::query()
+                ->where('player_id', $user->id)
+                ->where('target_slot', 'pickaxe')
+                ->where('equipped', true)
+                ->latest('created_at')
+                ->first();
+
+            return [
+                'slot' => $slot,
+                'equipped_item' => [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'target_slot' => $item->target_slot,
+                ],
+                'equipped_pickaxe' => $equippedPickaxe ? [
+                    'id' => $equippedPickaxe->id,
+                    'name' => $equippedPickaxe->name,
+                    'mining_power' => $equippedPickaxe->mining_dmg_bonus,
+                    'luck_bonus' => $equippedPickaxe->luck_bonus,
+                ] : null,
+                'equipment' => $equipmentState,
+            ];
+        });
+
+        return response()->json([
+            'message' => 'Item equipped.',
+            ...$result,
         ]);
     }
 }

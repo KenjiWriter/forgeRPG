@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { BookOpen, Folder, LayoutGrid, Menu, Search } from 'lucide-vue-next';
+import { BookOpen, Flame, Folder, LayoutGrid, Menu, Search, Store } from 'lucide-vue-next';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
@@ -35,7 +35,8 @@ import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
 import { toUrl } from '@/lib/utils';
-import { dashboard } from '@/routes';
+import { dashboard, forge } from '@/routes';
+import { index as shop } from '@/actions/App/Http/Controllers/Shop/ShopController';
 import type { BreadcrumbItem, NavItem } from '@/types';
 
 type Props = {
@@ -58,6 +59,16 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Forge',
+        href: forge(),
+        icon: Flame,
+    },
+    {
+        title: 'Shop',
+        href: shop(),
+        icon: Store,
     },
 ];
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, Flame } from 'lucide-vue-next';
+import { BookOpen, FolderGit2, LayoutGrid, Flame, Store } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -15,6 +15,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard, forge } from '@/routes';
+import { index as shop } from '@/actions/App/Http/Controllers/Shop/ShopController';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -27,6 +28,11 @@ const mainNavItems: NavItem[] = [
         title: 'Forge',
         href: forge(),
         icon: Flame,
+    },
+    {
+        title: 'Shop',
+        href: shop(),
+        icon: Store,
     },
 ];
 

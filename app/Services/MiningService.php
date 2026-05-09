@@ -61,8 +61,8 @@ class MiningService
         // Linear scaling: FinalDamage = BaseDamage * (CurrentStamina / 100)
         // A hit at 50% stamina deals exactly 50% of base damage.
         $multiplier = $effectiveStamina / 100.0;
-        $pickaxePower = $equippedPickaxe?->mining_dmg_bonus ?? 5;
-        $damage = max(1, (int) round(($pickaxePower + $stats->mining_speed) * $multiplier));
+        $miningPower = (int) ($equippedPickaxe?->mining_dmg_bonus ?? 0);
+        $damage = max(1, (int) round(($miningPower + $stats->mining_speed) * $multiplier));
 
         // Fixed 30-stamina cost per hit; clamp to 0 so it never goes negative.
         $newStamina = max(0.0, $effectiveStamina - self::STAMINA_COST_PER_HIT);
@@ -154,11 +154,12 @@ class MiningService
 
     private function getEquippedPickaxe(User $user): ?Item
     {
-        return $user->equipmentSlots()
-            ->where('slot', 'pickaxe')
-            ->with('item')
+        return $user->items()
+            ->where('target_slot', 'pickaxe')
+            ->where('equipped', true)
+            ->latest('created_at')
             ->first()
-            ?->item;
+            ?: null;
     }
 
     private function calculateCurrentStamina(PlayerStat $stats): float
