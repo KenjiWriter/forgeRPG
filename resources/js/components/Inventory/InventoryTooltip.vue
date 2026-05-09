@@ -38,6 +38,7 @@ export interface InventoryEquipSuccessPayload {
         name: string;
         mining_power: number;
         luck_bonus: number;
+        stamina_regen_bonus: number;
     } | null;
 }
 
@@ -126,6 +127,7 @@ const statLabels: Record<string, string> = {
     mining_speed_bonus: 'Mine Spd',
     mining_dmg_bonus: 'Mine DMG',
     luck_bonus: 'Luck',
+    stamina_regen_bonus: 'Stamina Regen',
     attack_speed_bonus: 'ATK Spd',
     dodge_bonus: 'Dodge',
 };
@@ -240,6 +242,7 @@ async function equipItem(): Promise<void> {
                 name: string;
                 mining_power: number;
                 luck_bonus: number;
+                stamina_regen_bonus: number;
             } | null;
         }>(
             equipByItemId.url(),
@@ -323,7 +326,10 @@ const tooltipStyle = computed(() => {
                 class="flex items-center justify-between text-xs"
             >
                 <span class="text-slate-400">{{ stat.label }}</span>
-                <span class="font-mono font-bold text-white">+{{ stat.value }}</span>
+                <span class="font-mono font-bold text-white">
+                    <template v-if="stat.key === 'stamina_regen_bonus'">+{{ Number(stat.value).toFixed(1) }}/s</template>
+                    <template v-else>+{{ stat.value }}</template>
+                </span>
             </div>
         </div>
         <div v-if="item.holdable_type === 'ore'" class="mb-2 text-xs text-slate-400">

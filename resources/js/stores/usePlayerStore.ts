@@ -6,6 +6,7 @@ interface Pickaxe {
     name: string;
     mining_power: number;
     luck_bonus: number;
+    stamina_regen_bonus: number;
 }
 
 export const usePlayerStore = defineStore('player', () => {

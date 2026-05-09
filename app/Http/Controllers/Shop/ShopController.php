@@ -36,6 +36,7 @@ class ShopController extends Controller
                     'rarity' => $pickaxe->rarity,
                     'mining_power' => $pickaxe->power,
                     'luck_bonus' => $pickaxe->luck_boost,
+                    'stamina_regen_bonus' => (float) $pickaxe->stamina_regen_bonus,
                     'buy_price' => $pickaxe->price,
                     'min_level' => $minimumLevel,
                     'owned_quantity' => (int) ($ownershipByPickaxe[$pickaxe->id] ?? 0),
@@ -103,9 +104,11 @@ class ShopController extends Controller
                 'forge_signature' => sprintf('shop:pickaxe:%d', $pickaxe->id),
                 'mining_dmg_bonus' => $pickaxe->power,
                 'luck_bonus' => $pickaxe->luck_boost,
+                'stamina_regen_bonus' => $pickaxe->stamina_regen_bonus,
                 'final_stats' => [
                     'mining_power' => $pickaxe->power,
                     'luck_bonus' => $pickaxe->luck_boost,
+                    'stamina_regen_bonus' => (float) $pickaxe->stamina_regen_bonus,
                 ],
                 'equipped' => false,
                 'created_at' => now(),
@@ -127,6 +130,7 @@ class ShopController extends Controller
                 'buy_price' => $buyPrice,
                 'mining_power' => (int) $pickaxe->power,
                 'luck_bonus' => (int) $pickaxe->luck_boost,
+                'stamina_regen_bonus' => (float) $pickaxe->stamina_regen_bonus,
             ];
         });
 

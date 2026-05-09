@@ -26,14 +26,14 @@ class DashboardController extends Controller
         /** @var PlayerStat $stats */
         $stats = $user->stats;
 
-        $effectiveStamina = $this->computeStamina($stats);
-        $now = now();
-
         $equippedPickaxe = $user->items()
             ->where('target_slot', 'pickaxe')
             ->where('equipped', true)
             ->latest('created_at')
             ->first();
+
+        $effectiveStamina = $this->computeStamina($stats, $equippedPickaxe?->stamina_regen_bonus ?? 0.0);
+        $now = now();
 
         $island = $user->currentIsland;
 
@@ -141,18 +141,20 @@ class DashboardController extends Controller
                 'name' => $equippedPickaxe->name,
                 'mining_power' => $equippedPickaxe->mining_dmg_bonus,
                 'luck_bonus' => $equippedPickaxe->luck_bonus,
+                'stamina_regen_bonus' => (float) $equippedPickaxe->stamina_regen_bonus,
             ] : null,
         ]);
     }
 
-    private function computeStamina(PlayerStat $stats): float
+    private function computeStamina(PlayerStat $stats, float $staminaRegenBonus = 0.0): float
     {
         if ($stats->stamina_last_updated_at === null) {
             return (float) $stats->stamina;
         }
 
         $elapsed = max(0, now()->timestamp - $stats->stamina_last_updated_at->timestamp);
+        $regenPerSecond = 3 + $staminaRegenBonus;
 
-        return min(100.0, (float) $stats->stamina + ($elapsed * 3));
+        return min(100.0, (float) $stats->stamina + ($elapsed * $regenPerSecond));
     }
 }

@@ -21,7 +21,7 @@ use Carbon\CarbonImmutable;
 class MiningService
 {
     /** 3 pts/sec → ~33 seconds for a full 0→100 recharge */
-    private const STAMINA_REGEN_PER_SECOND = 3;
+    private const BASE_STAMINA_REGEN_PER_SECOND = 3;
 
     /** Fixed stamina cost per hit */
     private const STAMINA_COST_PER_HIT = 30.0;
@@ -52,7 +52,7 @@ class MiningService
         $stats = $user->stats;
         $equippedPickaxe = $this->getEquippedPickaxe($user);
 
-        $effectiveStamina = $this->calculateCurrentStamina($stats);
+        $effectiveStamina = $this->calculateCurrentStamina($stats, $equippedPickaxe);
 
         if ($effectiveStamina < self::STAMINA_MINIMUM_THRESHOLD) {
             abort(422, 'Not enough stamina.');
@@ -162,16 +162,21 @@ class MiningService
             ?: null;
     }
 
-    private function calculateCurrentStamina(PlayerStat $stats): float
+    private function calculateCurrentStamina(PlayerStat $stats, ?Item $equippedPickaxe = null): float
     {
         if ($stats->stamina_last_updated_at === null) {
             return (float) $stats->stamina;
         }
 
         $elapsed = max(0, CarbonImmutable::now()->timestamp - $stats->stamina_last_updated_at->timestamp);
-        $regenerated = $elapsed * self::STAMINA_REGEN_PER_SECOND;
+        $regenerated = $elapsed * $this->staminaRegenPerSecond($equippedPickaxe);
 
         return min(100.0, $stats->stamina + $regenerated);
+    }
+
+    private function staminaRegenPerSecond(?Item $equippedPickaxe = null): float
+    {
+        return self::BASE_STAMINA_REGEN_PER_SECOND + (float) ($equippedPickaxe?->stamina_regen_bonus ?? 0.0);
     }
 
     /**

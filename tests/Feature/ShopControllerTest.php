@@ -15,6 +15,7 @@ test('guests cannot access shop endpoints', function () {
         'price' => 5000,
         'power' => 12,
         'luck_boost' => 5,
+        'stamina_regen_bonus' => 0.2,
         'speed_modifier' => 1.10,
         'slots' => 1,
     ]);
@@ -31,6 +32,7 @@ test('shop index returns pickaxes for authenticated user', function () {
         'price' => 5000,
         'power' => 12,
         'luck_boost' => 5,
+        'stamina_regen_bonus' => 0.2,
         'speed_modifier' => 1.10,
         'slots' => 1,
     ]);
@@ -48,6 +50,7 @@ test('purchase fails when user has insufficient gold', function () {
         'price' => 5000,
         'power' => 12,
         'luck_boost' => 5,
+        'stamina_regen_bonus' => 0.2,
         'speed_modifier' => 1.10,
         'slots' => 1,
     ]);
@@ -69,6 +72,7 @@ test('purchase fails when user level is below required island level', function (
         'price' => 10000,
         'power' => 60,
         'luck_boost' => 30,
+        'stamina_regen_bonus' => 1.4,
         'speed_modifier' => 1.50,
         'slots' => 2,
         'requires_island_id' => $island->id,
@@ -90,6 +94,7 @@ test('successful purchase deducts gold and creates ownership plus inventory item
         'price' => 5000,
         'power' => 12,
         'luck_boost' => 5,
+        'stamina_regen_bonus' => 0.2,
         'speed_modifier' => 1.10,
         'slots' => 1,
     ]);
@@ -114,6 +119,7 @@ test('successful purchase deducts gold and creates ownership plus inventory item
         'target_slot' => 'pickaxe',
         'mining_dmg_bonus' => 12,
         'luck_bonus' => 5,
+        'stamina_regen_bonus' => 0.2,
     ]);
 
     $this->assertDatabaseHas('inventories', [
@@ -132,6 +138,7 @@ test('purchased pickaxe item can be equipped from inventory', function () {
         'price' => 30000,
         'power' => 60,
         'luck_boost' => 35,
+        'stamina_regen_bonus' => 1.0,
         'speed_modifier' => 1.55,
         'slots' => 2,
     ]);

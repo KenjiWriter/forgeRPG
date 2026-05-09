@@ -57,6 +57,7 @@ interface Pickaxe {
     name: string;
     mining_power: number;
     luck_bonus: number;
+    stamina_regen_bonus: number;
 }
 
 interface FlyingNumber {
@@ -144,15 +145,23 @@ const flashNode = ref(false);
 let flyingNumberCounter = 0;
 
 // Client-side stamina display — pure increment regen, no timestamp math.
-// Each 100ms tick adds 0.3 pts  → 3 pts/sec → full 0→100 in ~33 s.
+// Base regen is 3 pts/sec, then equipped pickaxe bonus is added reactively.
 // The WS StaminaUpdated event snaps displayStamina to the server's authoritative value.
-const STAMINA_REGEN_PER_TICK = 0.3; // 3 pts/sec at 100ms intervals
+const BASE_STAMINA_REGEN_PER_SECOND = 3;
+const staminaRegenPerSecond = computed(() => {
+    return BASE_STAMINA_REGEN_PER_SECOND + (playerStore.currentPickaxe?.stamina_regen_bonus ?? 0);
+});
+
+const STAMINA_TICK_MS = 100;
 const displayStamina = ref(props.player_stats.stamina);
 useIntervalFn(() => {
     if (displayStamina.value < 100) {
-        displayStamina.value = Math.min(100, displayStamina.value + STAMINA_REGEN_PER_TICK);
+        displayStamina.value = Math.min(
+            100,
+            displayStamina.value + (staminaRegenPerSecond.value * (STAMINA_TICK_MS / 1000)),
+        );
     }
-}, 100);
+}, STAMINA_TICK_MS);
 
 // Echo: private channel — server snaps stamina to authoritative value after each hit.
 useEcho<{ stamina: number; stamina_last_updated_at: string }>(
@@ -235,6 +244,9 @@ const hpBarColor = computed(() => {
 // Stamina power: 0–100% shown as POW label. Below 20% the bar also shakes.
 const powerPercent = computed(() => Math.round(displayStamina.value));
 const isLowPower = computed(() => displayStamina.value < 20);
+const totalMiningPower = computed(() => playerStore.currentPickaxe?.mining_power ?? 0);
+const totalMiningLuck = computed(() => playerStore.currentPickaxe?.luck_bonus ?? 0);
+const staminaRegenLabel = computed(() => `${staminaRegenPerSecond.value.toFixed(1)}/s`);
 
 const rarityBorderMap: Record<string, string> = {
     common: 'border-slate-600',
@@ -433,6 +445,24 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                     <span class="font-semibold">{{ playerStore.currentPickaxe.name }}</span>
                 </div>
                 <p v-else class="font-semibold text-muted-foreground">No Pickaxe</p>
+            </div>
+
+            <div class="rounded-md border border-slate-700/70 bg-slate-900/30 px-3 py-2">
+                <p class="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Stat Summary</p>
+                <div class="flex items-center gap-3 text-xs">
+                    <span class="inline-flex items-center gap-1 text-slate-200">
+                        <span aria-hidden="true">⛏️</span>
+                        {{ totalMiningPower }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-slate-200">
+                        <span aria-hidden="true">🍀</span>
+                        {{ totalMiningLuck }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-slate-200">
+                        <span aria-hidden="true">⚡</span>
+                        {{ staminaRegenLabel }}
+                    </span>
+                </div>
             </div>
         </div>
 

@@ -6,6 +6,7 @@ use App\Events\NodeSpawned;
 use App\Events\NodeUpdated;
 use App\Events\StaminaUpdated;
 use App\Models\Island;
+use App\Models\Item;
 use App\Models\LevelDefinition;
 use App\Models\MiningNode;
 use App\Models\NodeType;
@@ -305,4 +306,43 @@ test('cannot hit when stamina is below minimum threshold', function () {
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
         ])->assertUnprocessable();
+});
+
+test('equipped pickaxe stamina regen bonus increases effective stamina regeneration', function () {
+    $user = User::factory()->create();
+
+    $user->stats->update([
+        'stamina' => 6,
+        'stamina_last_updated_at' => now()->subSecond(),
+    ]);
+
+    Item::query()
+        ->where('player_id', $user->id)
+        ->where('target_slot', 'pickaxe')
+        ->update(['equipped' => false]);
+
+    Item::create([
+        'player_id' => $user->id,
+        'name' => 'Regen Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 1,
+        'mining_dmg_bonus' => 5,
+        'luck_bonus' => 0,
+        'stamina_regen_bonus' => 2.0,
+        'equipped' => true,
+        'created_at' => now(),
+    ]);
+
+    $nodeType = NodeType::factory()->create(['tier' => 1, 'respawn_minutes' => 5]);
+    $island = Island::factory()->create();
+    $node = MiningNode::factory()->create([
+        'island_id' => $island->id,
+        'node_type_id' => $nodeType->id,
+        'current_hp' => 500,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('mining.hit'), [
+            'node_id' => $node->id,
+        ])->assertOk();
 });

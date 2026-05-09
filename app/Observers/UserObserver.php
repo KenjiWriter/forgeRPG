@@ -35,6 +35,7 @@ class UserObserver
             'forge_grade' => 1,
             'mining_dmg_bonus' => $woodenPickaxe?->power ?? 5,
             'luck_bonus' => $woodenPickaxe?->luck_boost ?? 0,
+            'stamina_regen_bonus' => $woodenPickaxe?->stamina_regen_bonus ?? 0,
             'equipped' => true,
             'created_at' => now(),
         ]);
