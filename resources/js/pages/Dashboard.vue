@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useEcho, useEchoPresence } from '@laravel/echo-vue';
 import { useIntervalFn } from '@vueuse/core';
 import axios from 'axios';
 import { usePlayerStore } from '@/stores/usePlayerStore';
 import { hit } from '@/actions/App/Http/Controllers/Mining/MiningController';
+import { equip as inventoryEquip, sell as inventorySell } from '@/actions/App/Http/Controllers/Inventory/InventoryController';
 import { dashboard } from '@/routes';
+import { ChevronDown, ChevronUp } from 'lucide-vue-next';
+import InventoryTooltip, { type InventoryItemData } from '@/components/Inventory/InventoryTooltip.vue';
 
 interface Player {
     id: number;
@@ -42,11 +45,7 @@ interface MiningNode {
     node_type: NodeType;
 }
 
-interface InventoryItem {
-    id: number;
-    name: string;
-    quantity: number;
-}
+interface InventoryItem extends InventoryItemData {}
 
 interface Pickaxe {
     id: number;
@@ -71,19 +70,56 @@ const props = defineProps<{
     equipped_pickaxe: Pickaxe | null;
 }>();
 
-defineOptions({
-    inheritAttrs: false, // Dashboard renders a fragment; attrs are handled by the layout
-    layout: {
-        breadcrumbs: [{ title: 'Mining', href: dashboard() }],
-    },
-});
-
 const playerStore = usePlayerStore();
 playerStore.initialize(props.player, props.player_stats, props.equipped_pickaxe);
 
 // Local reactive state for node and inventory (updated via WebSocket + hit responses)
 const node = ref<MiningNode | null>(props.current_node ? { ...props.current_node } : null);
 const inventory = ref<InventoryItem[]>([...props.inventory]);
+
+// Inventory panel UI state
+const inventoryExpanded = ref(true);
+const tooltip = ref<{ item: InventoryItem; anchorX: number; anchorY: number; anchorLeft: number } | null>(null);
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+onUnmounted(() => {
+    if (hideTimer) clearTimeout(hideTimer);
+});
+
+function showTooltip(item: InventoryItem, event: MouseEvent): void {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    tooltip.value = { item, anchorX: rect.right, anchorY: rect.top, anchorLeft: rect.left };
+}
+
+function scheduleHide(): void {
+    hideTimer = setTimeout(() => { tooltip.value = null; hideTimer = null; }, 120);
+}
+
+function cancelHide(): void {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+}
+
+async function handleEquip(inventoryId: number): Promise<void> {
+    tooltip.value = null;
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    try {
+        await axios.post(inventoryEquip.url(inventoryId), {}, { withXSRFToken: true });
+    } catch {
+        // Equip errors are non-critical for now
+    }
+}
+
+async function handleSell(inventoryId: number): Promise<void> {
+    tooltip.value = null;
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    try {
+        await axios.post(inventorySell.url(inventoryId), {}, { withXSRFToken: true });
+        inventory.value = inventory.value.filter((i) => i.inventory_id !== inventoryId);
+    } catch {
+        // Sell errors are non-critical for now
+    }
+}
 
 // Visual effects state
 const flyingNumbers = ref<FlyingNumber[]>([]);
@@ -184,6 +220,36 @@ const hpBarColor = computed(() => {
 const powerPercent = computed(() => Math.round(displayStamina.value));
 const isLowPower = computed(() => displayStamina.value < 20);
 
+const rarityBorderMap: Record<string, string> = {
+    common: 'border-slate-600',
+    uncommon: 'border-green-700',
+    rare: 'border-blue-600',
+    epic: 'border-purple-600',
+    legendary: 'border-orange-500',
+    mythical: 'border-yellow-400',
+};
+
+const gradeGlowMap: Record<number, string> = {
+    1: 'border-slate-600',
+    2: 'border-green-700',
+    3: 'border-blue-600',
+    4: 'border-blue-600',
+    5: 'border-purple-600',
+    6: 'border-purple-600',
+    7: 'border-orange-500',
+    8: 'border-orange-500',
+    9: 'border-yellow-400',
+    10: 'border-yellow-400',
+};
+
+function itemBorderClass(item: InventoryItem): string {
+    if (item.holdable_type === 'item' && item.forge_grade !== undefined) {
+        return gradeGlowMap[item.forge_grade] ?? 'border-slate-600';
+    }
+    const rarity = (item.rarity ?? 'common').toLowerCase();
+    return rarityBorderMap[rarity] ?? 'border-slate-600';
+}
+
 // Mining hit
 async function onNodeClick(event: MouseEvent): Promise<void> {
     if (!node.value || node.value.is_respawning || isHitting.value || displayStamina.value < 10) {
@@ -236,11 +302,20 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
         // Merge any loot drops into the inventory
         if (data.loot?.length) {
             for (const drop of data.loot) {
-                const existing = inventory.value.find((i) => i.id === drop.ore_id);
+                const existing = inventory.value.find(
+                    (i) => i.holdable_type === 'ore' && i.id === drop.ore_id,
+                );
                 if (existing) {
                     existing.quantity++;
                 } else {
-                    inventory.value.push({ id: drop.ore_id, name: drop.name, quantity: 1 });
+                    inventory.value.push({
+                        inventory_id: drop.ore_id,
+                        id: drop.ore_id,
+                        name: drop.name,
+                        quantity: 1,
+                        holdable_type: 'ore',
+                        rarity: drop.rarity ?? 'common',
+                    });
                 }
             }
         }
@@ -370,25 +445,77 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
 
             <!-- Inventory sidebar -->
             <div
-                class="flex w-56 shrink-0 flex-col rounded-xl border border-sidebar-border/70 bg-card p-4 dark:border-sidebar-border"
+                class="flex w-64 shrink-0 flex-col rounded-xl border border-sidebar-border/70 bg-card dark:border-sidebar-border"
             >
-                <h3 class="mb-3 text-sm font-semibold">Inventory</h3>
-                <ul v-if="inventory.length" class="flex flex-col gap-1.5 overflow-y-auto">
-                    <li
-                        v-for="item in inventory"
-                        :key="item.id"
-                        class="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm"
+                <!-- Inventory header / toggle -->
+                <div
+                    class="flex cursor-pointer select-none items-center justify-between px-4 py-3"
+                    @click="inventoryExpanded = !inventoryExpanded"
+                >
+                    <h3 class="text-sm font-semibold">
+                        Inventory
+                        <span class="ml-1 text-xs font-normal text-muted-foreground">({{ inventory.length }})</span>
+                    </h3>
+                    <ChevronUp v-if="inventoryExpanded" class="h-4 w-4 text-muted-foreground" />
+                    <ChevronDown v-else class="h-4 w-4 text-muted-foreground" />
+                </div>
+
+                <!-- Grid scrollbox -->
+                <div
+                    v-if="inventoryExpanded"
+                    class="inventory-scrollbox p-3"
+                >
+                    <div
+                        v-if="inventory.length"
+                        class="grid gap-1.5"
+                        style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr))"
                     >
-                        <span class="truncate">{{ item.name }}</span>
-                        <span class="ml-2 shrink-0 font-mono font-bold text-primary"
-                            >×{{ item.quantity }}</span
+                        <div
+                            v-for="item in inventory"
+                            :key="item.inventory_id"
+                            class="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 bg-muted/40 p-1.5 text-center transition-colors hover:bg-muted/70"
+                            :class="itemBorderClass(item)"
+                            @mouseenter="showTooltip(item, $event)"
+                            @mouseleave="scheduleHide()"
                         >
-                    </li>
-                </ul>
-                <p v-else class="mt-6 text-center text-xs text-muted-foreground">
-                    Nothing yet.<br />Start mining!
-                </p>
+                            <!-- Slot icon -->
+                            <div class="mb-0.5 text-2xl">
+                                <span v-if="item.holdable_type === 'item'">⚔️</span>
+                                <span v-else>🪨</span>
+                            </div>
+                            <!-- Item name truncated -->
+                            <p class="w-full truncate text-center text-[10px] leading-tight text-muted-foreground">
+                                {{ item.name }}
+                            </p>
+                            <!-- Quantity badge -->
+                            <span
+                                v-if="item.quantity > 1"
+                                class="absolute right-0.5 top-0.5 rounded bg-black/70 px-1 text-[9px] font-bold text-white"
+                            >
+                                ×{{ item.quantity }}
+                            </span>
+                        </div>
+                    </div>
+                    <p v-else class="py-6 text-center text-xs text-muted-foreground">
+                        Nothing yet.<br />Start mining!
+                    </p>
+                </div>
             </div>
+
+            <!-- Global inventory tooltip (rendered at body level via fixed positioning) -->
+            <Teleport to="body">
+                <InventoryTooltip
+                    v-if="tooltip"
+                    :item="tooltip.item"
+                    :anchor-x="tooltip.anchorX"
+                    :anchor-y="tooltip.anchorY"
+                    :anchor-left="tooltip.anchorLeft"
+                    @mouseenter="cancelHide"
+                    @mouseleave="scheduleHide"
+                    @equip="handleEquip"
+                    @sell="handleSell"
+                />
+            </Teleport>
         </div>
 
         <!-- Bottom HUD: Stamina bar -->
@@ -428,6 +555,26 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
 </template>
 
 <style scoped>
+.inventory-scrollbox {
+    max-height: 360px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.inventory-scrollbox::-webkit-scrollbar {
+    width: 5px;
+}
+
+.inventory-scrollbox::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.inventory-scrollbox::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+}
+
 @keyframes fly-up {
     0% {
         opacity: 1;

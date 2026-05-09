@@ -63,11 +63,33 @@ class DashboardController extends Controller
             ->with('holdable')
             ->get()
             ->filter(fn ($slot) => $slot->holdable !== null)
-            ->map(fn ($slot) => [
-                'id' => $slot->holdable->id,
-                'name' => $slot->holdable->name,
-                'quantity' => $slot->quantity,
-            ]);
+            ->map(function ($slot) {
+                $holdable = $slot->holdable;
+                $type = class_basename($holdable);
+
+                if ($type === 'Item') {
+                    return [
+                        'inventory_id' => $slot->id,
+                        'id' => $holdable->id,
+                        'name' => $holdable->name,
+                        'quantity' => $slot->quantity,
+                        'holdable_type' => 'item',
+                        'forge_grade' => $holdable->forge_grade,
+                        'target_slot' => $holdable->target_slot,
+                        'elemental_affinity' => $holdable->elemental_affinity,
+                        'final_stats' => $holdable->final_stats ?? [],
+                    ];
+                }
+
+                return [
+                    'inventory_id' => $slot->id,
+                    'id' => $holdable->id,
+                    'name' => $holdable->name,
+                    'quantity' => $slot->quantity,
+                    'holdable_type' => 'ore',
+                    'rarity' => $holdable->rarity ?? 'common',
+                ];
+            });
 
         $nextLevelDef = LevelDefinition::where('level', '>', $user->level)
             ->orderBy('level')
