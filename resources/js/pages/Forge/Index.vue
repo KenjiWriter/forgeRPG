@@ -165,20 +165,6 @@ async function onQuenchingComplete(score: number) {
     stage.value = 'result';
 }
 
-// Handle item crafted
-function onItemCrafted(
-    item: ForgeCraftedItem,
-    grade: number,
-    combinedScore: number,
-    name: string
-) {
-    resultItem.value = item;
-    resultGrade.value = grade;
-    resultCombinedScore.value = combinedScore;
-    itemName.value = name;
-    stage.value = 'result';
-}
-
 // Handle completion/return to selection
 function onReturnToSelection() {
     stage.value = 'selection';
@@ -267,7 +253,6 @@ function onReturnToSelection() {
                     :smelting-score="smeltingScore"
                     :smithing-score="smithingScore"
                     :quench-score="quenchScore"
-                    @item-crafted="onItemCrafted"
                     @return-to-selection="onReturnToSelection"
                 />
             </div>

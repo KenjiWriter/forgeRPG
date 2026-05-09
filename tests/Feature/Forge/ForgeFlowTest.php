@@ -5,6 +5,7 @@ use App\Models\Inventory;
 use App\Models\Item;
 use App\Models\OreType;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     // Set up test data
@@ -335,4 +336,91 @@ test('grade mapping is correct for all grades', function () {
 
         expect($response->json('grade'))->toBe($case['expected_grade']);
     }
+});
+
+test('forge acquire adds completed item to inventory and archives session', function () {
+    $user = User::factory()->create();
+
+    $item = Item::create([
+        'id' => (string) Str::uuid(),
+        'player_id' => $user->id,
+        'name' => 'Forged Helmet',
+        'target_slot' => 'helmet',
+        'forge_grade' => 8,
+        'forge_signature' => '1:1|2:1|3:1',
+        'hp_bonus' => 12,
+        'attack_bonus' => 0,
+        'defense_bonus' => 8,
+        'equipped' => false,
+        'created_at' => now(),
+    ]);
+
+    $session = ForgeSession::create([
+        'id' => (string) Str::uuid(),
+        'player_id' => $user->id,
+        'target_slot' => 'helmet',
+        'ore_inputs' => [
+            ['ore_type_id' => 1, 'quantity' => 1],
+            ['ore_type_id' => 2, 'quantity' => 1],
+            ['ore_type_id' => 3, 'quantity' => 1],
+        ],
+        'result_item_id' => $item->id,
+        'status' => 'completed',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('forge.acquire', $session))
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('item.id', $item->id);
+
+    $session->refresh();
+    expect($session->status)->toBe('archived');
+
+    $inventoryRow = Inventory::query()
+        ->where('user_id', $user->id)
+        ->where('holdable_type', Item::class)
+        ->where('holdable_id', $item->id)
+        ->first();
+
+    expect($inventoryRow)->not->toBeNull();
+    expect($inventoryRow->quantity)->toBe(1);
+
+    $this->actingAs($user)
+        ->postJson(route('forge.acquire', $session))
+        ->assertUnprocessable();
+});
+
+test('forge acquire rejects when session belongs to another player', function () {
+    $owner = User::factory()->create();
+    $intruder = User::factory()->create();
+
+    $item = Item::create([
+        'id' => (string) Str::uuid(),
+        'player_id' => $owner->id,
+        'name' => 'Forged Weapon',
+        'target_slot' => 'weapon',
+        'forge_grade' => 7,
+        'forge_signature' => '1:1|2:1|3:1',
+        'attack_bonus' => 15,
+        'equipped' => false,
+        'created_at' => now(),
+    ]);
+
+    $session = ForgeSession::create([
+        'id' => (string) Str::uuid(),
+        'player_id' => $owner->id,
+        'target_slot' => 'weapon',
+        'ore_inputs' => [
+            ['ore_type_id' => 1, 'quantity' => 1],
+            ['ore_type_id' => 2, 'quantity' => 1],
+            ['ore_type_id' => 3, 'quantity' => 1],
+        ],
+        'result_item_id' => $item->id,
+        'status' => 'completed',
+    ]);
+
+    $this->actingAs($intruder)
+        ->postJson(route('forge.acquire', $session))
+        ->assertForbidden();
 });

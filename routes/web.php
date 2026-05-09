@@ -18,6 +18,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('forge', [ForgeController::class, 'index'])->name('forge');
     Route::post('forge/init', [ForgeController::class, 'init'])->name('forge.init');
     Route::post('forge/complete', [ForgeController::class, 'complete'])->name('forge.complete');
+    Route::post('forge/acquire/{session}', [ForgeController::class, 'acquire'])->name('forge.acquire');
 });
 
 require __DIR__.'/settings.php';

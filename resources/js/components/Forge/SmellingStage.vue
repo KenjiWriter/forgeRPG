@@ -16,9 +16,12 @@ const emit = defineEmits<{
 }>();
 
 const GAME_DURATION_MS = 10000;
-const HEAT_COOL_RATE = 18; // heat/sec
-const HEAT_PUSH_RATE = 34; // heat/sec while holding push
+const HEAT_COOL_RATE = 22; // heat/sec
+const HEAT_PUSH_RATE = 44.2; // heat/sec while holding push (+30%)
 const HEAT_PUSH_TAP_BOOST = 1.2;
+const HEAT_RESPONSE_DAMPING = 11;
+const HEAT_MAX_RISE_SPEED = 50;
+const HEAT_MAX_FALL_SPEED = 36;
 const SWEET_SPOT_HALF_SIZE = 9;
 const SWEET_SPOT_AMPLITUDE = 32;
 const SWEET_SPOT_PERIOD_MS = 7600;
@@ -27,6 +30,7 @@ const SWEET_SPOT_CENTER_MAX = 90 - SWEET_SPOT_HALF_SIZE;
 const SWEET_SPOT_LERP_SPEED = 3.4;
 
 const heat = ref(52);
+const heatVelocity = ref(0);
 const isPushing = ref(false);
 const sweetSpotTargetCenter = ref(50);
 const sweetSpotCenter = ref(50);
@@ -125,8 +129,12 @@ function tick(now: number): void {
     const lerpAlpha = Math.min(1, SWEET_SPOT_LERP_SPEED * deltaSeconds);
     sweetSpotCenter.value += (sweetSpotTargetCenter.value - sweetSpotCenter.value) * lerpAlpha;
 
-    const directionalForce = isPushing.value ? HEAT_PUSH_RATE : 0;
-    const heatDelta = (directionalForce - HEAT_COOL_RATE) * deltaSeconds;
+    const targetVelocity = isPushing.value ? HEAT_PUSH_RATE : -HEAT_COOL_RATE;
+    const dampingAlpha = Math.min(1, HEAT_RESPONSE_DAMPING * deltaSeconds);
+    heatVelocity.value += (targetVelocity - heatVelocity.value) * dampingAlpha;
+    heatVelocity.value = Math.max(-HEAT_MAX_FALL_SPEED, Math.min(HEAT_MAX_RISE_SPEED, heatVelocity.value));
+
+    const heatDelta = heatVelocity.value * deltaSeconds;
     heat.value = Math.max(0, Math.min(100, heat.value + heatDelta));
 
     if (isInSweetSpot.value) {
@@ -137,6 +145,7 @@ function tick(now: number): void {
         gameActive.value = false;
         gameFinished.value = true;
         isPushing.value = false;
+        heatVelocity.value = 0;
         return;
     }
 

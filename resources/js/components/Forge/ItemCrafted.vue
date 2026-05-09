@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { forge } from '@/routes';
+import { router } from '@inertiajs/vue3';
+import axios from 'axios';
+import { dashboard } from '@/routes';
+import { acquire as forgeAcquire } from '@/routes/forge';
+import { toast } from 'vue-sonner';
 import { Trophy, Zap, Shield, Sword, Pickaxe, Footprints } from 'lucide-vue-next';
 
 interface ForgeCraftedItem {
@@ -28,7 +32,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    itemCrafted: [item: ForgeCraftedItem, grade: number, combinedScore: number, name: string];
     returnToSelection: [];
 }>();
 
@@ -80,31 +83,21 @@ async function acquireItem() {
     errorMessage.value = '';
 
     try {
-        const response = await fetch(forge.complete(), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-                forge_session_id: props.forgeSessionId,
-                smelting_score: props.smeltingScore,
-                smithing_score: props.smithingScore,
-                quench_score: props.quenchScore,
-                item_name: itemName.value,
-            }),
+        await axios.post(forgeAcquire.url(props.forgeSessionId), {}, {
+            withCredentials: true,
+            withXSRFToken: true,
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            emit('itemCrafted', props.item, props.grade, props.combinedScore, itemName.value);
+        toast.success('Item added to inventory!');
+
+        router.visit(dashboard.url());
+    } catch (error: unknown) {
+        if (axios.isAxiosError(error)) {
+            const message = error.response?.data?.message as string | undefined;
+            errorMessage.value = message ?? 'Failed to acquire item.';
         } else {
-            const error = await response.json();
-            errorMessage.value = error.message || 'Failed to craft item';
+            errorMessage.value = 'Network error. Please try again.';
         }
-    } catch (error) {
-        errorMessage.value = 'Network error. Please try again.';
     } finally {
         processing.value = false;
     }

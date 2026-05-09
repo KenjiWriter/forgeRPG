@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Island;
 use App\Models\LevelDefinition;
 use App\Models\MiningNode;
-use App\Models\OreType;
 use App\Models\PlayerStat;
 use App\Services\MiningService;
 use Illuminate\Http\Request;
@@ -61,9 +60,9 @@ class DashboardController extends Controller
         }
 
         $inventory = $user->inventory()
-            ->where('holdable_type', OreType::class)
             ->with('holdable')
             ->get()
+            ->filter(fn ($slot) => $slot->holdable !== null)
             ->map(fn ($slot) => [
                 'id' => $slot->holdable->id,
                 'name' => $slot->holdable->name,

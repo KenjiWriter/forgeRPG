@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Forge\ForgeCompleteRequest;
 use App\Http\Requests\Forge\ForgeInitRequest;
 use App\Models\ForgeSession;
+use App\Models\Inventory;
+use App\Models\Item;
 use App\Models\OreType;
 use App\Services\ForgeService;
 use Illuminate\Http\JsonResponse;
@@ -130,6 +132,53 @@ class ForgeController extends Controller
             ],
             'grade' => $result['grade'],
             'combined_score' => $result['combined_score'],
+        ]);
+    }
+
+    /**
+     * Acquire a completed forged item and archive the forge session.
+     */
+    public function acquire(Request $request, ForgeSession $session): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($session->player_id !== $user->id) {
+            abort(403, 'This forge session does not belong to you.');
+        }
+
+        $session->load('resultItem');
+
+        if (! $session->resultItem instanceof Item) {
+            abort(422, 'No forged item is available for this session.');
+        }
+
+        if ($session->status !== 'completed') {
+            abort(422, 'This forge session is not ready to acquire.');
+        }
+
+        if ($session->resultItem->player_id !== $user->id) {
+            abort(403, 'This forged item does not belong to you.');
+        }
+
+        Inventory::firstOrCreate([
+            'user_id' => $user->id,
+            'holdable_type' => Item::class,
+            'holdable_id' => $session->resultItem->id,
+        ], [
+            'quantity' => 1,
+        ]);
+
+        $session->status = 'archived';
+        $session->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Item added to inventory!',
+            'item' => [
+                'id' => $session->resultItem->id,
+                'name' => $session->resultItem->name,
+                'target_slot' => $session->resultItem->target_slot,
+            ],
         ]);
     }
 
