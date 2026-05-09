@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { AlertCircle, Flame } from 'lucide-vue-next';
 
 interface OreInput {
@@ -7,7 +7,7 @@ interface OreInput {
     quantity: number;
 }
 
-const props = defineProps<{
+defineProps<{
     selectedOres: OreInput[];
 }>();
 
@@ -15,81 +15,131 @@ const emit = defineEmits<{
     complete: [score: number];
 }>();
 
-// Bellows mechanics
-const isDragging = ref(false);
-const bellowsPosition = ref(50); // 0-100 (left to right)
-const timeInSweetSpot = ref(0); // milliseconds
+const GAME_DURATION_MS = 10000;
+const HEAT_COOL_RATE = 18; // heat/sec
+const HEAT_PUSH_RATE = 34; // heat/sec while holding push
+const SWEET_SPOT_HALF_SIZE = 9;
+const SWEET_SPOT_AMPLITUDE = 32;
+const SWEET_SPOT_PERIOD_MS = 2800;
+
+const heat = ref(52);
+const isPushing = ref(false);
+const sweetSpotCenter = ref(50);
+const timeInSweetSpot = ref(0);
 const gameTime = ref(0);
 const gameActive = ref(true);
+const gameFinished = ref(false);
 const gameStartTime = ref(0);
 
-// Score calculation
-const sweetSpotStart = 30;
-const sweetSpotEnd = 70;
+let animationFrameId: number | null = null;
+let lastFrameAt = 0;
 
-const isInSweetSpot = computed(() => bellowsPosition.value >= sweetSpotStart && bellowsPosition.value <= sweetSpotEnd);
+const sweetSpotStart = computed(() => Math.max(0, sweetSpotCenter.value - SWEET_SPOT_HALF_SIZE));
+const sweetSpotEnd = computed(() => Math.min(100, sweetSpotCenter.value + SWEET_SPOT_HALF_SIZE));
+const sweetSpotHeight = computed(() => sweetSpotEnd.value - sweetSpotStart.value);
 
-const timePercent = computed(() => Math.min(100, (gameTime.value / 10000) * 100));
-
-const score = computed(() => {
-    // Score is based on time spent in sweet spot
-    // Max 10 seconds = 10000ms → 100%
-    return Math.min(100, Math.round((timeInSweetSpot.value / 10000) * 100));
+const isInSweetSpot = computed(() => {
+    return heat.value >= sweetSpotStart.value && heat.value <= sweetSpotEnd.value;
 });
 
-// Bellows UI helpers
-const bellowsVisualPosition = computed(() => `${bellowsPosition.value}%`);
-const bellowsHandleColor = computed(() =>
-    isInSweetSpot.value ? 'bg-green-500' : 'bg-red-500'
-);
+const timePercent = computed(() => Math.min(100, (gameTime.value / GAME_DURATION_MS) * 100));
 
-function onMouseDown() {
-    isDragging.value = true;
+const score = computed(() => {
+    return Math.min(100, Math.round((timeInSweetSpot.value / GAME_DURATION_MS) * 100));
+});
+
+const heatIndicatorClass = computed(() => {
+    return isInSweetSpot.value ? 'bg-green-400 shadow-green-500/50' : 'bg-red-500 shadow-red-500/40';
+});
+
+function startPushing(): void {
+    if (!gameActive.value) {
+        return;
+    }
+
+    isPushing.value = true;
 }
 
-function onMouseMove(e: MouseEvent) {
-    if (!isDragging.value || !gameActive.value) return;
-
-    const container = (e.currentTarget as HTMLElement).querySelector('[data-bellows-track]') as HTMLElement;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const percent = (x / rect.width) * 100;
-
-    bellowsPosition.value = Math.round(percent);
+function stopPushing(): void {
+    isPushing.value = false;
 }
 
-function onMouseUp() {
-    isDragging.value = false;
+function onKeydown(event: KeyboardEvent): void {
+    if (event.code !== 'Space') {
+        return;
+    }
+
+    event.preventDefault();
+    startPushing();
 }
 
-function completeStage() {
-    gameActive.value = false;
+function onKeyup(event: KeyboardEvent): void {
+    if (event.code !== 'Space') {
+        return;
+    }
+
+    event.preventDefault();
+    stopPushing();
+}
+
+function completeStage(): void {
+    if (!gameFinished.value) {
+        return;
+    }
+
     emit('complete', score.value);
 }
 
+function tick(now: number): void {
+    if (!gameActive.value) {
+        return;
+    }
+
+    if (lastFrameAt === 0) {
+        lastFrameAt = now;
+    }
+
+    const deltaSeconds = (now - lastFrameAt) / 1000;
+    lastFrameAt = now;
+
+    gameTime.value = now - gameStartTime.value;
+
+    const sweetOscillation = Math.sin((gameTime.value / SWEET_SPOT_PERIOD_MS) * Math.PI * 2);
+    const drift = Math.sin((gameTime.value / 1700) * Math.PI * 2) * 6;
+    sweetSpotCenter.value = 50 + sweetOscillation * SWEET_SPOT_AMPLITUDE + drift;
+
+    const directionalForce = isPushing.value ? HEAT_PUSH_RATE : 0;
+    const heatDelta = (directionalForce - HEAT_COOL_RATE) * deltaSeconds;
+    heat.value = Math.max(0, Math.min(100, heat.value + heatDelta));
+
+    if (isInSweetSpot.value) {
+        timeInSweetSpot.value += deltaSeconds * 1000;
+    }
+
+    if (gameTime.value >= GAME_DURATION_MS) {
+        gameActive.value = false;
+        gameFinished.value = true;
+        isPushing.value = false;
+        return;
+    }
+
+    animationFrameId = window.requestAnimationFrame(tick);
+}
+
 onMounted(() => {
-    gameStartTime.value = Date.now();
+    gameStartTime.value = performance.now();
+    animationFrameId = window.requestAnimationFrame(tick);
+    window.addEventListener('keydown', onKeydown);
+    window.addEventListener('keyup', onKeyup);
+});
 
-    const interval = setInterval(() => {
-        if (!gameActive.value) {
-            clearInterval(interval);
-            return;
-        }
+onUnmounted(() => {
+    window.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('keyup', onKeyup);
 
-        const now = Date.now();
-        gameTime.value = now - gameStartTime.value;
-
-        if (isInSweetSpot.value) {
-            timeInSweetSpot.value += 16; // ~60fps
-        }
-
-        if (gameTime.value >= 10000) {
-            gameActive.value = false;
-            clearInterval(interval);
-        }
-    }, 16);
+    if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+    }
 });
 </script>
 
@@ -117,59 +167,75 @@ onMounted(() => {
                 <p class="text-2xl font-bold text-green-400">{{ Math.round(timeInSweetSpot / 1000) }}s</p>
             </div>
             <div class="rounded bg-slate-800 p-3">
-                <p class="text-xs text-slate-500">ELAPSED TIME</p>
-                <p class="text-2xl font-bold text-slate-300">{{ Math.round(gameTime / 1000) }}s / 10s</p>
+                <p class="text-xs text-slate-500">HEAT LEVEL</p>
+                <p class="text-2xl font-bold text-red-400">{{ Math.round(heat) }}%</p>
             </div>
         </div>
 
-        <!-- Progress Bar -->
-        <div class="space-y-2">
-            <p class="text-xs text-slate-500">GAME PROGRESS</p>
-            <div class="h-2 w-full rounded-full bg-slate-800">
-                <div class="h-full rounded-full bg-orange-500 transition-all duration-100" :style="{ width: timePercent + '%' }" />
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="rounded bg-slate-800 p-3 sm:col-span-1">
+                <p class="text-xs text-slate-500">ELAPSED TIME</p>
+                <p class="text-2xl font-bold text-slate-300">{{ Math.round(gameTime / 1000) }}s / 10s</p>
+            </div>
+            <div class="rounded bg-slate-800 p-3 sm:col-span-2">
+                <p class="mb-2 text-xs text-slate-500">GAME PROGRESS</p>
+                <div class="h-2 w-full rounded-full bg-slate-700">
+                    <div class="h-full rounded-full bg-orange-500 transition-all duration-100" :style="{ width: timePercent + '%' }" />
+                </div>
             </div>
         </div>
 
         <!-- Bellows Mini-game -->
         <div class="space-y-3">
-            <p class="text-sm font-semibold text-slate-200">Bellows Position</p>
-
-            <!-- Bellows Track -->
+            <p class="text-sm font-semibold text-slate-200">Bellows Pressure (Vertical Furnace)</p>
             <div
-                @mousemove="onMouseMove"
-                @mouseleave="onMouseUp"
-                @mouseup="onMouseUp"
+                @mousedown="startPushing"
+                @mouseup="stopPushing"
+                @mouseleave="stopPushing"
                 class="rounded border border-slate-600 bg-slate-800 p-4"
             >
-                <div
-                    data-bellows-track
-                    class="relative h-12 w-full rounded bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900"
-                >
-                    <!-- Sweet Spot Zone -->
-                    <div
-                        class="absolute top-0 h-full bg-green-500/10 border-l-2 border-r-2 border-green-500/50 rounded"
-                        :style="{ left: sweetSpotStart + '%', right: 100 - sweetSpotEnd + '%' }"
-                    >
-                        <p class="h-full flex items-center justify-center text-xs font-semibold text-green-400">
-                            SWEET SPOT
-                        </p>
+                <div class="flex items-end justify-center gap-8">
+                    <div class="relative flex h-80 w-20 items-center justify-center overflow-hidden rounded bg-gradient-to-t from-slate-950 via-slate-900 to-red-950/80">
+                        <div class="absolute inset-x-0 bottom-0 h-12 bg-orange-500/10 blur-sm" />
+
+                        <!-- Moving sweet spot zone -->
+                        <div
+                            class="absolute inset-x-2 rounded border border-green-400/80 bg-green-500/20"
+                            :style="{ bottom: `${sweetSpotStart}%`, height: `${sweetSpotHeight}%` }"
+                        >
+                            <div class="flex h-full items-center justify-center text-[10px] font-semibold tracking-wide text-green-300">
+                                SWEET
+                            </div>
+                        </div>
+
+                        <!-- Heat indicator -->
+                        <div
+                            :class="[
+                                'absolute inset-x-0 h-1.5 shadow-lg transition-colors duration-75',
+                                heatIndicatorClass,
+                            ]"
+                            :style="{ bottom: `${heat}%` }"
+                        />
+
+                        <!-- Heat marker orb -->
+                        <div
+                            :class="[
+                                'absolute left-1/2 h-4 w-4 -translate-x-1/2 rounded-full border border-slate-100/60 shadow-lg transition-colors duration-75',
+                                heatIndicatorClass,
+                            ]"
+                            :style="{ bottom: `${heat}%` }"
+                        />
                     </div>
 
-                    <!-- Bellows Handle -->
-                    <button
-                        @mousedown="onMouseDown"
-                        :class="[
-                            'absolute top-1/2 -translate-y-1/2 w-8 h-full rounded transition cursor-grab active:cursor-grabbing',
-                            bellowsHandleColor,
-                            isDragging && 'ring-2 ring-amber-400',
-                        ]"
-                        :style="{ left: bellowsVisualPosition }"
-                    />
+                    <div class="relative flex h-80 w-8 items-end rounded bg-slate-900">
+                        <div class="w-full rounded bg-orange-500/80 transition-all duration-100" :style="{ height: `${timePercent}%` }" />
+                        <div class="absolute -right-20 top-1/2 text-xs text-slate-400">Timer</div>
+                    </div>
+                </div>
 
-                    <!-- Bellows Position Text -->
-                    <p class="absolute bottom-1 left-2 text-xs text-slate-500">
-                        {{ Math.round(bellowsPosition) }}%
-                    </p>
+                <div class="mt-4 rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-center text-sm text-slate-300">
+                    Hold mouse button or <span class="font-semibold text-amber-300">SPACE</span> to push heat upward.
+                    Release to let gravity cool the furnace.
                 </div>
             </div>
 
@@ -178,31 +244,25 @@ onMounted(() => {
                 <div class="flex items-start gap-2">
                     <AlertCircle class="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-400" />
                     <p class="text-xs text-blue-200">
-                        Drag the bellows handle to the green sweet spot zone (30-70%) and keep it there as long as possible.
-                        Higher time in sweet spot = higher score.
+                        Hardcore mode: heat naturally falls over time. The sweet spot moves continuously up and down.
+                        Chase the moving zone to maximize score.
                     </p>
                 </div>
             </div>
         </div>
 
-        <!-- Complete Button -->
         <button
+            v-if="gameFinished"
             @click="completeStage"
-            :disabled="!gameActive && score === 0"
-            :class="[
-                'w-full rounded px-4 py-3 font-semibold transition',
-                gameActive
-                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                    : 'bg-amber-500 text-white hover:bg-amber-600',
-            ]"
+            class="w-full rounded bg-amber-500 px-4 py-3 font-semibold text-white transition hover:bg-amber-600"
         >
-            {{ gameActive ? `Smelting... (${Math.round(gameTime / 1000)}/10s)` : `Proceed to Smithing (Score: ${score}%)` }}
+            Proceed to Smithing (Score: {{ score }}%)
         </button>
+        <div
+            v-else
+            class="w-full rounded bg-slate-700 px-4 py-3 text-center font-semibold text-slate-300"
+        >
+            Smelting in progress... ({{ Math.round(gameTime / 1000) }}/10s)
+        </div>
     </div>
 </template>
-
-<style scoped>
-button[data-bellows-track] {
-    user-select: none;
-}
-</style>

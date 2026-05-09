@@ -11,7 +11,7 @@ class DevResourceSeeder extends Seeder
 {
     public function run(): void
     {
-        $user = User::query()->orderBy('id')->first();
+        $user = User::query()->first();
 
         if (! $user) {
             return;

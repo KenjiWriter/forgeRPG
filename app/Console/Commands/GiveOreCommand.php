@@ -34,7 +34,7 @@ class GiveOreCommand extends Command
         $userIdArgument = $this->argument('user_id');
         $user = $userIdArgument
             ? User::query()->find((int) $userIdArgument)
-            : User::query()->orderBy('id')->first();
+            : User::query()->first();
 
         if (! $user) {
             $this->error('No user found. Create a user first or provide a valid user_id.');

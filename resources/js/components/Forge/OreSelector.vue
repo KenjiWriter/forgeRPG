@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { forge } from '@/routes';
+import axios from 'axios';
+import { init as forgeInit } from '@/routes/forge';
 import { AlertCircle, Zap } from 'lucide-vue-next';
 
 interface OreInput {
@@ -31,7 +32,13 @@ const targetSlot = ref('helmet');
 const processing = ref(false);
 const errorMessage = ref('');
 
-const isComplete = computed(() => selectedOres.value.length === 3);
+const selectedOreCount = computed(() => {
+    return selectedOres.value.reduce((total, ore) => total + ore.quantity, 0);
+});
+
+const hasExactlyThreeOres = computed(() => {
+    return selectedOres.value.length === 3 && selectedOreCount.value === 3;
+});
 
 const potentialQuality = computed(() => {
     if (selectedOres.value.length === 0) return 'None';
@@ -85,34 +92,47 @@ function decreaseQuantity(index: number) {
 }
 
 async function startForge() {
-    if (!isComplete.value) return;
+    if (!hasExactlyThreeOres.value) return;
 
     processing.value = true;
     errorMessage.value = '';
 
     try {
-        const response = await fetch(forge.init(), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-                target_slot: targetSlot.value,
-                ore_inputs: selectedOres.value,
-            }),
+        const response = await axios.post(forgeInit.url(), {
+            target_slot: targetSlot.value,
+            ore_inputs: selectedOres.value,
+        }, {
+            withCredentials: true,
+            withXSRFToken: true,
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            emit('selectionComplete', data.forge_session_id, selectedOres.value, targetSlot.value);
-        } else {
-            const error = await response.json();
-            errorMessage.value = error.message || 'Failed to initialize forge';
+        const data = response.data as {
+            forge_session_id?: string;
+            session_id?: string;
+        };
+
+        const sessionId = data.forge_session_id ?? data.session_id;
+        if (!sessionId) {
+            errorMessage.value = 'Forge session was not created. Please try again.';
+            return;
         }
-    } catch (error) {
-        errorMessage.value = 'Network error. Please try again.';
+
+        emit('selectionComplete', sessionId, selectedOres.value, targetSlot.value);
+    } catch (error: unknown) {
+        if (axios.isAxiosError(error)) {
+            const validationErrors = error.response?.data?.errors as Record<string, string[]> | undefined;
+            const message = error.response?.data?.message as string | undefined;
+
+            if (validationErrors && Object.keys(validationErrors).length > 0) {
+                errorMessage.value = Object.values(validationErrors)
+                    .flat()
+                    .join(' ');
+            } else {
+                errorMessage.value = message ?? 'Failed to initialize forge.';
+            }
+        } else {
+            errorMessage.value = 'Failed to initialize forge.';
+        }
     } finally {
         processing.value = false;
     }
@@ -207,14 +227,14 @@ async function startForge() {
                 <div>
                     <p class="text-sm font-semibold text-amber-400">Potential Quality</p>
                     <p class="text-sm text-amber-200">
-                        {{ isComplete ? potentialQuality : 'Select 3 ores to preview quality' }}
+                        {{ hasExactlyThreeOres ? potentialQuality : 'Select exactly 3 ores to preview quality' }}
                     </p>
                 </div>
             </div>
         </div>
 
         <!-- Selected Ores Summary -->
-        <div v-if="isComplete" class="rounded border border-green-600/50 bg-green-900/20 p-4">
+        <div v-if="hasExactlyThreeOres" class="rounded border border-green-600/50 bg-green-900/20 p-4">
             <p class="text-sm font-semibold text-green-400">
                 Ready to forge: {{ selectedOreNames }}
             </p>
@@ -225,8 +245,12 @@ async function startForge() {
             <div class="flex items-start gap-3">
                 <AlertCircle class="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-400" />
                 <div>
-                    <p class="text-sm font-semibold text-orange-400">Need {{ 3 - selectedOres.length }} more ore(s)</p>
-                    <p class="text-xs text-orange-200">Exactly 3 ores are required by the Rule of 3 Ores</p>
+                    <p class="text-sm font-semibold text-orange-400">
+                        Need exactly 3 ores total (currently {{ selectedOreCount }})
+                    </p>
+                    <p class="text-xs text-orange-200">
+                        Rule of 3 Ores requires exactly three selected ores before forge initialization.
+                    </p>
                 </div>
             </div>
         </div>
@@ -234,10 +258,10 @@ async function startForge() {
         <!-- Start Forge Button -->
         <button
             @click="startForge"
-            :disabled="!isComplete || processing"
+            :disabled="!hasExactlyThreeOres || processing"
             :class="[
                 'w-full rounded px-4 py-3 font-semibold transition',
-                isComplete && !processing
+                hasExactlyThreeOres && !processing
                     ? 'bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50',
             ]"

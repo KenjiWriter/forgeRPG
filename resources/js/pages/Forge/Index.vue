@@ -38,8 +38,6 @@ const props = defineProps<{
     inventory: InventoryItem[];
 }>();
 
-const hasNoOres = computed(() => props.inventory.length === 0);
-
 defineOptions({
     layout: {
         breadcrumbs: [{ title: 'Forge', href: forge() }],
@@ -82,6 +80,11 @@ function onOreSelectionComplete(
     ores: OreInput[],
     slot: string
 ) {
+    const totalSelectedOres = ores.reduce((sum, ore) => sum + ore.quantity, 0);
+    if (ores.length !== 3 || totalSelectedOres !== 3) {
+        return;
+    }
+
     forgeSessionId.value = sessionId;
     selectedOres.value = ores;
     targetSlot.value = slot;
@@ -155,18 +158,8 @@ function onReturnToSelection() {
             <!-- Content Area -->
             <div class="mt-8">
                 <!-- Ore Selection -->
-                <div
-                    v-if="stage === 'selection' && hasNoOres"
-                    class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6"
-                >
-                    <h2 class="text-lg font-semibold text-amber-300">No ores available</h2>
-                    <p class="mt-2 text-sm text-amber-100/90">
-                        You need at least 3 ores to forge. Mine or add ores with the developer command before starting a forge session.
-                    </p>
-                </div>
-
                 <OreSelector
-                    v-else-if="stage === 'selection'"
+                    v-if="stage === 'selection'"
                     :inventory="inventory"
                     @selection-complete="onOreSelectionComplete"
                 />
