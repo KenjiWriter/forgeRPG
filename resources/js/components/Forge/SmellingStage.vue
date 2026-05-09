@@ -18,12 +18,17 @@ const emit = defineEmits<{
 const GAME_DURATION_MS = 10000;
 const HEAT_COOL_RATE = 18; // heat/sec
 const HEAT_PUSH_RATE = 34; // heat/sec while holding push
+const HEAT_PUSH_TAP_BOOST = 1.2;
 const SWEET_SPOT_HALF_SIZE = 9;
 const SWEET_SPOT_AMPLITUDE = 32;
-const SWEET_SPOT_PERIOD_MS = 2800;
+const SWEET_SPOT_PERIOD_MS = 7600;
+const SWEET_SPOT_CENTER_MIN = 10 + SWEET_SPOT_HALF_SIZE;
+const SWEET_SPOT_CENTER_MAX = 90 - SWEET_SPOT_HALF_SIZE;
+const SWEET_SPOT_LERP_SPEED = 3.4;
 
 const heat = ref(52);
 const isPushing = ref(false);
+const sweetSpotTargetCenter = ref(50);
 const sweetSpotCenter = ref(50);
 const timeInSweetSpot = ref(0);
 const gameTime = ref(0);
@@ -55,6 +60,11 @@ const heatIndicatorClass = computed(() => {
 function startPushing(): void {
     if (!gameActive.value) {
         return;
+    }
+
+    if (!isPushing.value) {
+        // Instant tactile response when player starts pushing the bellows.
+        heat.value = Math.min(100, heat.value + HEAT_PUSH_TAP_BOOST);
     }
 
     isPushing.value = true;
@@ -105,8 +115,15 @@ function tick(now: number): void {
     gameTime.value = now - gameStartTime.value;
 
     const sweetOscillation = Math.sin((gameTime.value / SWEET_SPOT_PERIOD_MS) * Math.PI * 2);
-    const drift = Math.sin((gameTime.value / 1700) * Math.PI * 2) * 6;
-    sweetSpotCenter.value = 50 + sweetOscillation * SWEET_SPOT_AMPLITUDE + drift;
+    const rawTargetCenter = 50 + sweetOscillation * SWEET_SPOT_AMPLITUDE;
+    sweetSpotTargetCenter.value = Math.max(
+        SWEET_SPOT_CENTER_MIN,
+        Math.min(SWEET_SPOT_CENTER_MAX, rawTargetCenter)
+    );
+
+    // Heavy-metal pacing: lerp toward target so zone movement feels weighted, not jittery.
+    const lerpAlpha = Math.min(1, SWEET_SPOT_LERP_SPEED * deltaSeconds);
+    sweetSpotCenter.value += (sweetSpotTargetCenter.value - sweetSpotCenter.value) * lerpAlpha;
 
     const directionalForce = isPushing.value ? HEAT_PUSH_RATE : 0;
     const heatDelta = (directionalForce - HEAT_COOL_RATE) * deltaSeconds;

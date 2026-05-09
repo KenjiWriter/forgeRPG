@@ -15,6 +15,8 @@ const emit = defineEmits<{
     complete: [score: number];
 }>();
 
+const hasEmittedCompletion = ref(false);
+
 // Game state
 const temperature = ref(100); // 0-100
 const targetTemperature = ref(75); // Fixed target
@@ -78,6 +80,8 @@ function stopQuench() {
 }
 
 function completeStage() {
+    if (hasEmittedCompletion.value) return;
+    hasEmittedCompletion.value = true;
     emit('complete', score.value);
 }
 
@@ -99,6 +103,9 @@ onMounted(() => {
             stopTime.value = Date.now() - gameStartTime.value;
             gameActive.value = false;
             clearInterval(interval);
+
+            // Auto-complete when timer naturally ends at zero temperature.
+            completeStage();
         }
     }, 50);
 });

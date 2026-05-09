@@ -37,7 +37,7 @@ const selectedOreCount = computed(() => {
 });
 
 const hasExactlyThreeOres = computed(() => {
-    return selectedOres.value.length === 3 && selectedOreCount.value === 3;
+    return selectedOreCount.value === 3;
 });
 
 const potentialQuality = computed(() => {
@@ -97,10 +97,17 @@ async function startForge() {
     processing.value = true;
     errorMessage.value = '';
 
+    const expandedOreInputs: OreInput[] = selectedOres.value.flatMap((ore) =>
+        Array.from({ length: ore.quantity }, () => ({
+            ore_type_id: ore.ore_type_id,
+            quantity: 1,
+        }))
+    );
+
     try {
         const response = await axios.post(forgeInit.url(), {
             target_slot: targetSlot.value,
-            ore_inputs: selectedOres.value,
+            ore_inputs: expandedOreInputs,
         }, {
             withCredentials: true,
             withXSRFToken: true,
@@ -117,7 +124,7 @@ async function startForge() {
             return;
         }
 
-        emit('selectionComplete', sessionId, selectedOres.value, targetSlot.value);
+        emit('selectionComplete', sessionId, expandedOreInputs, targetSlot.value);
     } catch (error: unknown) {
         if (axios.isAxiosError(error)) {
             const validationErrors = error.response?.data?.errors as Record<string, string[]> | undefined;
@@ -167,7 +174,7 @@ async function startForge() {
         <div>
             <div class="mb-3 flex items-center justify-between">
                 <label class="block text-sm font-semibold text-slate-200">
-                    Select Ores ({{ selectedOres.length }}/3)
+                    Select Ores ({{ selectedOreCount }}/3)
                 </label>
                 <span class="text-xs text-slate-400">Rule of 3 Ores</span>
             </div>
@@ -236,7 +243,7 @@ async function startForge() {
         <!-- Selected Ores Summary -->
         <div v-if="hasExactlyThreeOres" class="rounded border border-green-600/50 bg-green-900/20 p-4">
             <p class="text-sm font-semibold text-green-400">
-                Ready to forge: {{ selectedOreNames }}
+                3/3 Ores selected. Ready to forge: {{ selectedOreNames }}
             </p>
         </div>
 

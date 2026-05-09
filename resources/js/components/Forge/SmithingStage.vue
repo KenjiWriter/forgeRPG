@@ -27,26 +27,30 @@ interface HitFx {
     id: number;
     x: number;
     y: number;
-    tone: 'perfect' | 'good';
+    tone: 'perfect' | 'late';
 }
 
 const GAME_DURATION_MS = 10000;
 const CIRCLE_WINDOW_MS = 1500;
 const RING_SCALE_START = 2;
-const RING_SCALE_END = 1;
-const PERFECT_SCALE_MIN = 0.98;
-const PERFECT_SCALE_MAX = 1.06;
-const GOOD_SCALE_MIN = 0.9;
-const GOOD_SCALE_MAX = 1.2;
+const RING_SCALE_END = 0.5;
+const RING_PERFECT_LIGHT_MIN = 0.9;
+const RING_PERFECT_LIGHT_MAX = 1.1;
+const EARLY_HIT_MIN = 1.2;
+const PERFECT_MIN = 0.9;
+const PERFECT_MAX = 1.1;
+const LATE_MIN = 0.5;
+const LATE_MAX = 0.9;
 
 const gameTime = ref(0);
 const gameActive = ref(true);
 const gameFinished = ref(false);
 const gameStartTime = ref(0);
-const scoreValue = ref(100);
+const totalScoreEarned = ref(0);
+const totalScorePossible = ref(0);
 
 const perfectHits = ref(0);
-const goodHits = ref(0);
+const lateHits = ref(0);
 const earlyHits = ref(0);
 const missedHits = ref(0);
 
@@ -58,11 +62,15 @@ let animationFrameId: number | null = null;
 let lastFrameAt = 0;
 
 const score = computed(() => {
-    return Math.max(0, Math.min(100, Math.round(scoreValue.value)));
+    if (totalScorePossible.value === 0) {
+        return 0;
+    }
+
+    return Math.max(0, Math.min(100, Math.round((totalScoreEarned.value / totalScorePossible.value) * 100)));
 });
 
 const totalAttempts = computed(() => {
-    return perfectHits.value + goodHits.value + earlyHits.value + missedHits.value;
+    return perfectHits.value + lateHits.value + earlyHits.value + missedHits.value;
 });
 
 const accuracy = computed(() => {
@@ -70,7 +78,7 @@ const accuracy = computed(() => {
         return 0;
     }
 
-    return Math.round(((perfectHits.value + goodHits.value) / totalAttempts.value) * 100);
+    return Math.round(((perfectHits.value + lateHits.value) / totalAttempts.value) * 100);
 });
 
 const timePercent = computed(() => Math.min(100, (gameTime.value / GAME_DURATION_MS) * 100));
@@ -78,6 +86,22 @@ const timePercent = computed(() => Math.min(100, (gameTime.value / GAME_DURATION
 function getRingScale(target: ActiveTarget): number {
     const progress = Math.min(1, (performance.now() - target.spawnedAtMs) / target.durationMs);
     return RING_SCALE_START - (RING_SCALE_START - RING_SCALE_END) * progress;
+}
+
+function getRingVisualStyle(target: ActiveTarget): Record<string, string> {
+    const scale = getRingScale(target);
+    const isPerfectLight = scale >= RING_PERFECT_LIGHT_MIN && scale <= RING_PERFECT_LIGHT_MAX;
+    const isLateWindow = scale < PERFECT_MIN && scale >= LATE_MIN;
+
+    return {
+        transform: `scale(${scale})`,
+        borderColor: isPerfectLight ? '#22c55e' : isLateWindow ? '#f59e0b' : '#bae6fd',
+        boxShadow: isPerfectLight
+            ? '0 0 10px rgba(34, 197, 94, 0.65)'
+            : isLateWindow
+            ? '0 0 9px rgba(245, 158, 11, 0.45)'
+            : '0 0 5px rgba(125, 211, 252, 0.25)',
+    };
 }
 
 function spawnNewCircle(nowMs: number): void {
@@ -105,7 +129,8 @@ function pushHitFx(x: number, y: number, tone: 'perfect' | 'good'): void {
 }
 
 function applyPenalty(points: number): void {
-    scoreValue.value = Math.max(0, scoreValue.value - points);
+    totalScorePossible.value += 100;
+    totalScoreEarned.value += Math.max(0, 100 - points);
 }
 
 function hitActiveTarget(): void {
@@ -115,20 +140,26 @@ function hitActiveTarget(): void {
 
     const target = activeTarget.value;
     const ringScale = getRingScale(target);
+    totalScorePossible.value += 100;
 
-    if (ringScale >= PERFECT_SCALE_MIN && ringScale <= PERFECT_SCALE_MAX) {
-        perfectHits.value++;
-        scoreValue.value = Math.min(100, scoreValue.value + 1.5);
-        pushHitFx(target.x, target.y, 'perfect');
-    } else if (ringScale >= GOOD_SCALE_MIN && ringScale <= GOOD_SCALE_MAX) {
-        goodHits.value++;
-        pushHitFx(target.x, target.y, 'good');
-    } else if (ringScale > GOOD_SCALE_MAX) {
+    if (ringScale > EARLY_HIT_MIN) {
         earlyHits.value++;
-        applyPenalty(12);
-    } else {
+        totalScoreEarned.value += 50;
+    } else if (ringScale >= PERFECT_MIN && ringScale <= PERFECT_MAX) {
+        perfectHits.value++;
+        totalScoreEarned.value += 100;
+        pushHitFx(target.x, target.y, 'perfect');
+    } else if (ringScale >= LATE_MIN && ringScale < PERFECT_MIN) {
+        lateHits.value++;
+        totalScoreEarned.value += 50;
+        pushHitFx(target.x, target.y, 'late');
+    } else if (ringScale < LATE_MIN) {
         missedHits.value++;
-        applyPenalty(10);
+        totalScoreEarned.value += 0;
+    } else {
+        // Tiny gap safety branch should count as miss.
+        missedHits.value++;
+        totalScoreEarned.value += 0;
     }
 
     spawnNewCircle(performance.now());
@@ -146,7 +177,7 @@ function onRhythmZoneClick(event: MouseEvent): void {
     }
 
     missedHits.value++;
-    applyPenalty(14);
+    applyPenalty(100);
     spawnNewCircle(performance.now());
 }
 
@@ -185,7 +216,7 @@ function tick(now: number): void {
         const elapsed = now - activeTarget.value.spawnedAtMs;
         if (elapsed >= activeTarget.value.durationMs) {
             missedHits.value++;
-            applyPenalty(14);
+            totalScorePossible.value += 100;
             spawnNewCircle(now);
         }
     }
@@ -244,8 +275,8 @@ onUnmounted(() => {
                 <p class="text-2xl font-bold text-green-400">{{ accuracy }}%</p>
             </div>
             <div class="rounded bg-slate-800 p-3">
-                <p class="text-xs text-slate-500">PERFECT / GOOD</p>
-                <p class="text-2xl font-bold text-amber-400">{{ perfectHits }} / {{ goodHits }}</p>
+                <p class="text-xs text-slate-500">PERFECT / LATE</p>
+                <p class="text-2xl font-bold text-amber-400">{{ perfectHits }} / {{ lateHits }}</p>
             </div>
             <div class="rounded bg-slate-800 p-3">
                 <p class="text-xs text-slate-500">EARLY / MISSED</p>
@@ -288,19 +319,24 @@ onUnmounted(() => {
                     class="absolute"
                     :style="{ left: `${activeTarget.x}%`, top: `${activeTarget.y}%`, transform: 'translate(-50%, -50%)' }"
                 >
-                    <button
-                        type="button"
-                        data-hit-circle
-                        class="relative h-10 w-10 rounded-full border-2 border-white/80 bg-slate-200/20 focus:outline-none"
-                        @click="hitActiveTarget"
-                    >
-                        <span class="absolute inset-2 rounded-full bg-cyan-400/70" />
-                    </button>
-
                     <div
-                        class="pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan-300/90"
-                        :style="{ transform: `translate(-50%, -50%) scale(${getRingScale(activeTarget)})` }"
-                    />
+                        data-hit-circle
+                        class="relative flex h-12 w-12 items-center justify-center"
+                        @click.stop="hitActiveTarget"
+                    >
+                        <button
+                            type="button"
+                            data-hit-circle
+                            class="relative h-10 w-10 rounded-full border-2 border-white/80 bg-slate-200/20 focus:outline-none"
+                        >
+                            <span class="absolute inset-2 rounded-full bg-cyan-400/70" />
+                        </button>
+
+                        <div
+                            class="pointer-events-none absolute inset-0 rounded-full border-2 transition-colors duration-75"
+                            :style="getRingVisualStyle(activeTarget)"
+                        />
+                    </div>
                 </div>
 
                 <div
@@ -314,7 +350,7 @@ onUnmounted(() => {
                             'block h-14 w-14 animate-hit rounded-full border-2',
                             fx.tone === 'perfect'
                                 ? 'border-green-300 bg-green-400/25'
-                                : 'border-blue-300 bg-blue-400/25',
+                                : 'border-amber-300 bg-amber-400/25',
                         ]"
                     />
                 </div>
@@ -331,7 +367,7 @@ onUnmounted(() => {
                 <AlertCircle class="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-400" />
                 <div class="text-xs text-blue-200">
                     <p class="mb-1 font-semibold">Hardcore timing:</p>
-                    <p>Perfect when the shrinking ring overlaps the center circle. Early and misses cause heavy score penalties.</p>
+                    <p>Early &gt; 1.2 = 50%. Perfect 1.1 to 0.9 = 100% (green). Late 0.9 to 0.5 = 50% (orange). Below 0.5 = miss.</p>
                 </div>
             </div>
         </div>

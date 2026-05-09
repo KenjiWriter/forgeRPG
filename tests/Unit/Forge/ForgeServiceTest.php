@@ -87,9 +87,9 @@ test('getGradeFactor returns correct multipliers', function () {
         4 => 0.80,
         5 => 0.90,
         6 => 1.00,
-        7 => 1.15,
-        8 => 1.30,
-        9 => 1.50,
+        7 => 1.60,
+        8 => 1.75,
+        9 => 1.90,
         10 => 2.00,
     ];
 

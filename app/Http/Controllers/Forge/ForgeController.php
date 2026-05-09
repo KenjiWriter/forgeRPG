@@ -109,12 +109,17 @@ class ForgeController extends Controller
             $data['item_name']
         );
 
+        $rarity = $this->mapGradeToRarity($result['grade']);
+        $imagePath = "/images/items/forge-{$result['item']->target_slot}.png";
+
         return response()->json([
             'item' => [
                 'id' => $result['item']->id,
                 'name' => $result['item']->name,
                 'target_slot' => $result['item']->target_slot,
                 'forge_grade' => $result['item']->forge_grade,
+                'rarity' => $rarity,
+                'image_path' => $imagePath,
                 'hp_bonus' => $result['item']->hp_bonus,
                 'attack_bonus' => $result['item']->attack_bonus,
                 'defense_bonus' => $result['item']->defense_bonus,
@@ -126,5 +131,17 @@ class ForgeController extends Controller
             'grade' => $result['grade'],
             'combined_score' => $result['combined_score'],
         ]);
+    }
+
+    private function mapGradeToRarity(int $grade): string
+    {
+        return match (true) {
+            $grade >= 10 => 'Legendary',
+            $grade >= 9 => 'Mythic',
+            $grade >= 8 => 'Epic',
+            $grade >= 6 => 'Rare',
+            $grade >= 4 => 'Uncommon',
+            default => 'Common',
+        };
     }
 }

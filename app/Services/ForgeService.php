@@ -7,6 +7,7 @@ use App\Models\Inventory;
 use App\Models\Item;
 use App\Models\OreType;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 class ForgeService
 {
@@ -32,9 +33,9 @@ class ForgeService
         4 => 0.80,
         5 => 0.90,
         6 => 1.00,
-        7 => 1.15,
-        8 => 1.30,
-        9 => 1.50,
+        7 => 1.60,
+        8 => 1.75,
+        9 => 1.90,
         10 => 2.00,
     ];
 
@@ -197,18 +198,26 @@ class ForgeService
      * or a fixed normalization factor.
      *
      * @param  array  $ores  Array of { ore_type_id: int, quantity: int }
-     * @return array Keys: hp, attack, defense, mining_speed, attack_speed, dodge (0-capped)
+     * @return array<string, float> Keys: hp, attack, defense, mining_speed, mining_dmg, attack_speed, dodge
      */
-    public function calculateBaseStats(array $ores): array
+    public function calculateBaseStats(array $ores, ?string $targetSlot = null): array
     {
         $baseStats = [
-            'hp' => 0,
-            'attack' => 0,
-            'defense' => 0,
-            'mining_speed' => 0,
-            'attack_speed' => 0,
-            'dodge' => 0,
+            'hp' => 0.0,
+            'attack' => 0.0,
+            'defense' => 0.0,
+            'mining_speed' => 0.0,
+            'mining_dmg' => 0.0,
+            'attack_speed' => 0.0,
+            'dodge' => 0.0,
         ];
+
+        if ($targetSlot !== null) {
+            $templateStats = $this->resolveTemplateBaseStats($targetSlot);
+            foreach ($templateStats as $stat => $value) {
+                $baseStats[$stat] += $value;
+            }
+        }
 
         foreach ($ores as $ore) {
             $oreType = OreType::find($ore['ore_type_id']);
@@ -217,19 +226,142 @@ class ForgeService
                 continue;
             }
 
-            // Normalize quantity: scale 1-50 to weight 0.2-1.0
-            // Simple approach: min(quantity / 50, 1.0)
-            $quantityWeight = min($ore['quantity'] / 50.0, 1.0);
+            $quantityWeight = $this->calculateQuantityWeight((int) $ore['quantity']);
+            $oreMultiplier = max(0.1, (float) ($oreType->multiplier ?? 1.0));
 
-            $baseStats['hp'] += (int) round(($oreType->base_hp ?? 0) * $quantityWeight);
-            $baseStats['attack'] += (int) round(($oreType->base_attack ?? 0) * $quantityWeight);
-            $baseStats['defense'] += (int) round(($oreType->base_defense ?? 0) * $quantityWeight);
+            // Fallback to multiplier-derived defaults when ore base stat columns are zero.
+            $oreHp = (float) ($oreType->base_hp ?? 0);
+            $oreAttack = (float) ($oreType->base_attack ?? 0);
+            $oreDefense = (float) ($oreType->base_defense ?? 0);
+
+            if ($oreHp <= 0.0) {
+                $oreHp = max(2.0, $oreMultiplier * 16.0);
+            }
+
+            if ($oreAttack <= 0.0) {
+                $oreAttack = max(1.0, $oreMultiplier * 6.0);
+            }
+
+            if ($oreDefense <= 0.0) {
+                $oreDefense = max(1.0, $oreMultiplier * 5.0);
+            }
+
+            $baseStats['hp'] += $oreHp * $quantityWeight;
+            $baseStats['attack'] += $oreAttack * $quantityWeight;
+            $baseStats['defense'] += $oreDefense * $quantityWeight;
+
+            if ($targetSlot === 'pickaxe') {
+                $baseStats['mining_dmg'] += max(1.0, $oreMultiplier * 8.0) * $quantityWeight;
+                $baseStats['mining_speed'] += max(0.5, $oreMultiplier * 1.5) * $quantityWeight;
+            }
+
+            if ($targetSlot === 'weapon') {
+                $baseStats['attack_speed'] += max(0.2, $oreMultiplier * 0.4) * $quantityWeight;
+            }
+
+            if (
+                $targetSlot === 'boots'
+                || $targetSlot === 'pants'
+            ) {
+                $baseStats['dodge'] += max(0.3, $oreMultiplier * 0.6) * $quantityWeight;
+            }
         }
 
         // Cap dodge at 0-100
         $baseStats['dodge'] = min(100, $baseStats['dodge']);
 
         return $baseStats;
+    }
+
+    private function calculateQuantityWeight(int $quantity): float
+    {
+        if ($quantity <= 5) {
+            return 0.2;
+        }
+
+        if ($quantity <= 15) {
+            return 0.4;
+        }
+
+        if ($quantity <= 30) {
+            return 0.6;
+        }
+
+        if ($quantity <= 50) {
+            return 0.8;
+        }
+
+        return 1.0;
+    }
+
+    /**
+     * Resolve template base stats (seeded by ItemTemplateSeeder) with safe defaults.
+     *
+     * @return array<string, float>
+     */
+    private function resolveTemplateBaseStats(string $targetSlot): array
+    {
+        $slotDefaults = [
+            'helmet' => ['hp' => 8.0, 'defense' => 3.0],
+            'armor' => ['hp' => 12.0, 'defense' => 5.0],
+            'pants' => ['defense' => 2.0, 'dodge' => 1.0],
+            'boots' => ['defense' => 2.0, 'dodge' => 2.0],
+            'weapon' => ['attack' => 10.0],
+            'pickaxe' => ['mining_dmg' => 8.0, 'mining_speed' => 2.0],
+        ];
+
+        $normalized = [
+            'hp' => 0.0,
+            'attack' => 0.0,
+            'defense' => 0.0,
+            'mining_speed' => 0.0,
+            'mining_dmg' => 0.0,
+            'attack_speed' => 0.0,
+            'dodge' => 0.0,
+        ];
+
+        foreach (($slotDefaults[$targetSlot] ?? []) as $stat => $value) {
+            $normalized[$stat] = $value;
+        }
+
+        $template = Item::query()
+            ->where('target_slot', $targetSlot)
+            ->where('forge_signature', "template:{$targetSlot}")
+            ->latest('created_at')
+            ->first();
+
+        $templateStats = $template?->base_stats;
+        if (! is_array($templateStats)) {
+            return $normalized;
+        }
+
+        foreach ($templateStats as $rawKey => $rawValue) {
+            if (! is_numeric($rawValue)) {
+                continue;
+            }
+
+            $key = strtolower((string) $rawKey);
+            $key = str_replace([' ', '-'], '', $key);
+
+            $mappedKey = match ($key) {
+                'hp' => 'hp',
+                'attack' => 'attack',
+                'defense' => 'defense',
+                'miningspeed' => 'mining_speed',
+                'miningdamage', 'miningdmg' => 'mining_dmg',
+                'attackspeed' => 'attack_speed',
+                'dodge' => 'dodge',
+                default => null,
+            };
+
+            if ($mappedKey === null) {
+                continue;
+            }
+
+            $normalized[$mappedKey] = (float) $rawValue;
+        }
+
+        return $normalized;
     }
 
     /**
@@ -245,15 +377,21 @@ class ForgeService
     public function applyStatMultipliers(array $baseStats, int $playerLevel, int $grade): array
     {
         $gradeFactor = $this->getGradeFactor($grade);
-        $levelMultiplier = 1.0 + ($playerLevel - 1) * 0.02;
-        $levelMultiplier = min($levelMultiplier, 2.0); // Cap at level 50
+        $levelMultiplier = $this->getLevelMultiplier($playerLevel);
 
         $finalStats = [];
         foreach ($baseStats as $stat => $value) {
-            $finalStats[$stat] = (int) round($value * $gradeFactor * $levelMultiplier);
+            $finalStats[$stat] = (int) round(((float) $value) * $gradeFactor * $levelMultiplier);
         }
 
         return $finalStats;
+    }
+
+    private function getLevelMultiplier(int $playerLevel): float
+    {
+        $levelMultiplier = 1.0 + ($playerLevel - 1) * 0.02;
+
+        return min($levelMultiplier, 2.0);
     }
 
     /**
@@ -308,11 +446,33 @@ class ForgeService
         // Load player to get level
         $player = $session->player;
 
-        // Calculate base stats from ores
-        $baseStats = $this->calculateBaseStats($session->ore_inputs);
+        // Calculate base stats from ores + target-slot template
+        $baseStats = $this->calculateBaseStats($session->ore_inputs, $session->target_slot);
+
+        $gradeFactor = $this->getGradeFactor($grade);
+        $levelMultiplier = $this->getLevelMultiplier((int) $player->level);
 
         // Apply multipliers
         $finalStats = $this->applyStatMultipliers($baseStats, $player->level, $grade);
+
+        Log::info('Forge stat synthesis pipeline', [
+            'forge_session_id' => $session->id,
+            'player_id' => $player->id,
+            'target_slot' => $session->target_slot,
+            'ore_inputs' => $session->ore_inputs,
+            'scores' => [
+                'smelting' => $smeltingScore,
+                'smithing' => $smithingScore,
+                'quench' => $quenchScore,
+                'combined' => $combinedScore,
+            ],
+            'grade' => $grade,
+            'grade_factor' => $gradeFactor,
+            'level' => $player->level,
+            'level_multiplier' => $levelMultiplier,
+            'base_stats' => $baseStats,
+            'final_stats' => $finalStats,
+        ]);
 
         // Create item
         $item = Item::create([
@@ -325,6 +485,7 @@ class ForgeService
             'attack_bonus' => $finalStats['attack'] ?? 0,
             'defense_bonus' => $finalStats['defense'] ?? 0,
             'mining_speed_bonus' => $finalStats['mining_speed'] ?? 0,
+            'mining_dmg_bonus' => $finalStats['mining_dmg'] ?? 0,
             'attack_speed_bonus' => $finalStats['attack_speed'] ?? 0,
             'dodge_bonus' => $finalStats['dodge'] ?? 0,
             'base_stats' => $baseStats,
