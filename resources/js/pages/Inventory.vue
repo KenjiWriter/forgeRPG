@@ -92,7 +92,7 @@ const totalMiningLuck = computed(() => {
 });
 
 const totalStaminaRegen = computed(() => {
-    const baseRegen = 3; // From MiningService
+    const baseRegen = 10; // From MiningService
     const equippedBonus = equipment.value.pickaxe?.stamina_regen_bonus ?? 0;
     return baseRegen + equippedBonus;
 });

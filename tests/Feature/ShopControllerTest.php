@@ -7,6 +7,7 @@ use App\Models\Item;
 use App\Models\Pickaxe;
 use App\Models\User;
 use App\Models\UserItem;
+use Database\Seeders\PickaxeSeeder;
 
 test('guests cannot access shop endpoints', function () {
     $pickaxe = Pickaxe::create([
@@ -169,4 +170,29 @@ test('purchased pickaxe item can be equipped from inventory', function () {
 
     expect($slot)->not->toBeNull();
     expect((string) $slot?->item_id)->toBe($itemId);
+});
+
+test('rerunning pickaxe seeder upgrades existing pickaxe item mining power', function () {
+    $user = User::factory()->create();
+
+    Item::query()
+        ->where('player_id', $user->id)
+        ->where('target_slot', 'pickaxe')
+        ->update(['equipped' => false]);
+
+    $legacyItem = Item::create([
+        'player_id' => $user->id,
+        'name' => 'Stone Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 1,
+        'mining_dmg_bonus' => 25,
+        'luck_bonus' => 0,
+        'stamina_regen_bonus' => 0.0,
+        'equipped' => true,
+        'created_at' => now(),
+    ]);
+
+    $this->seed(PickaxeSeeder::class);
+
+    expect($legacyItem->fresh()?->mining_dmg_bonus)->toBe(40);
 });

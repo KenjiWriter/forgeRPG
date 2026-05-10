@@ -14,6 +14,8 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    private const BASE_STAMINA_REGEN_PER_SECOND = 10.0;
+
     public function __construct(
         private readonly MiningService $miningService,
         private readonly InventoryPricingService $inventoryPricingService,
@@ -186,7 +188,7 @@ class DashboardController extends Controller
         }
 
         $elapsed = max(0, now()->timestamp - $stats->stamina_last_updated_at->timestamp);
-        $regenPerSecond = 3 + $staminaRegenBonus;
+        $regenPerSecond = self::BASE_STAMINA_REGEN_PER_SECOND + $staminaRegenBonus;
 
         return min(100.0, (float) $stats->stamina + ($elapsed * $regenPerSecond));
     }

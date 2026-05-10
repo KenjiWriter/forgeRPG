@@ -12,6 +12,7 @@ use App\Models\MiningNode;
 use App\Models\NodeType;
 use App\Models\OreType;
 use App\Models\User;
+use App\Services\MiningService;
 use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
@@ -287,8 +288,8 @@ test('low stamina results in lower damage multiplier', function () {
             'node_id' => $node->id,
         ])->assertOk();
 
-    // Equipped pickaxe power defaults to 0, mining_speed=0, multiplier=0.11 → min damage clamps to 1
-    expect($response->json('damage_dealt'))->toBe(1);
+    // Starter pickaxe power is now 15; at 11% stamina this rounds to 2 damage.
+    expect($response->json('damage_dealt'))->toBe(2);
 });
 
 test('cannot hit when stamina is below minimum threshold', function () {
@@ -345,4 +346,25 @@ test('equipped pickaxe stamina regen bonus increases effective stamina regenerat
         ->postJson(route('mining.hit'), [
             'node_id' => $node->id,
         ])->assertOk();
+});
+
+test('spawned nodes use 70 percent of node type base hp', function () {
+    $island = Island::factory()->create();
+    $nodeType = NodeType::factory()->create([
+        'base_hp' => 100,
+        'respawn_minutes' => 5,
+    ]);
+
+    $island->nodeTypes()->attach($nodeType->id);
+
+    app(MiningService::class)->spawnNodesForIsland($island, 1);
+
+    $spawnedNode = MiningNode::query()
+        ->where('island_id', $island->id)
+        ->where('node_type_id', $nodeType->id)
+        ->first();
+
+    expect($spawnedNode)->not->toBeNull();
+    expect($spawnedNode?->max_hp)->toBe(70);
+    expect($spawnedNode?->current_hp)->toBe(70);
 });

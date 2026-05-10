@@ -20,8 +20,11 @@ use Carbon\CarbonImmutable;
 
 class MiningService
 {
-    /** 3 pts/sec → ~33 seconds for a full 0→100 recharge */
-    private const BASE_STAMINA_REGEN_PER_SECOND = 3;
+    /** 10 pts/sec → 10 seconds for a full 0→100 recharge */
+    private const BASE_STAMINA_REGEN_PER_SECOND = 10;
+
+    /** New nodes spawn with 70% of the node type base HP. */
+    private const NODE_HP_SCALING_FACTOR = 0.7;
 
     /** Fixed stamina cost per hit */
     private const STAMINA_COST_PER_HIT = 30.0;
@@ -241,8 +244,8 @@ class MiningService
         $newNode = MiningNode::create([
             'island_id' => $island->id,
             'node_type_id' => $randomNodeType->id,
-            'max_hp' => $randomNodeType->base_hp,
-            'current_hp' => $randomNodeType->base_hp,
+            'max_hp' => $this->scaledNodeHp((int) $randomNodeType->base_hp),
+            'current_hp' => $this->scaledNodeHp((int) $randomNodeType->base_hp),
             'respawns_at' => null,
         ]);
 
@@ -300,11 +303,13 @@ class MiningService
             $needed = max(0, $minimumPerType - $activeCount);
 
             for ($i = 0; $i < $needed; $i++) {
+                $scaledHp = $this->scaledNodeHp((int) $nodeType->base_hp);
+
                 $newNode = MiningNode::create([
                     'island_id' => $island->id,
                     'node_type_id' => $nodeType->id,
-                    'max_hp' => $nodeType->base_hp,
-                    'current_hp' => $nodeType->base_hp,
+                    'max_hp' => $scaledHp,
+                    'current_hp' => $scaledHp,
                     'respawns_at' => null,
                 ]);
 
@@ -317,5 +322,10 @@ class MiningService
         }
 
         return $spawned;
+    }
+
+    private function scaledNodeHp(int $baseHp): int
+    {
+        return max(1, (int) round($baseHp * self::NODE_HP_SCALING_FACTOR));
     }
 }

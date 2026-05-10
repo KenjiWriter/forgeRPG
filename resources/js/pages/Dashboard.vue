@@ -203,9 +203,9 @@ let flyingNumberCounter = 0;
 const nextHitAllowedAt = ref(0);
 
 // Client-side stamina display — pure increment regen, no timestamp math.
-// Base regen is 3 pts/sec, then equipped pickaxe bonus is added reactively.
+// Base regen is 10 pts/sec, then equipped pickaxe bonus is added reactively.
 // The WS StaminaUpdated event snaps displayStamina to the server's authoritative value.
-const BASE_STAMINA_REGEN_PER_SECOND = 3;
+const BASE_STAMINA_REGEN_PER_SECOND = 10;
 const staminaRegenPerSecond = computed(() => {
     return BASE_STAMINA_REGEN_PER_SECOND + (playerStore.currentPickaxe?.stamina_regen_bonus ?? 0);
 });
@@ -321,7 +321,7 @@ const totalMiningLuckStats = computed(() => {
 });
 
 const totalStaminaRegen = computed(() => {
-    const baseRegen = 3;
+    const baseRegen = 10;
     const equippedBonus = equipment.value.pickaxe?.stamina_regen_bonus ?? 0;
     return baseRegen + equippedBonus;
 });

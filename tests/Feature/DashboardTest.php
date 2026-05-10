@@ -58,7 +58,7 @@ test('dashboard includes equipped pickaxe mining speed multiplier', function () 
         'target_slot' => 'pickaxe',
         'forge_grade' => 2,
         'mining_speed_bonus' => 120,
-        'mining_dmg_bonus' => 25,
+        'mining_dmg_bonus' => 600,
         'luck_bonus' => 5,
         'stamina_regen_bonus' => 0.3,
         'equipped' => true,
@@ -70,7 +70,8 @@ test('dashboard includes equipped pickaxe mining speed multiplier', function () 
         ->assertInertia(
             fn ($page) => $page
                 ->component('Dashboard')
-                ->where('equipped_pickaxe.mining_speed', 1.2),
+                ->where('equipped_pickaxe.mining_speed', 1.2)
+                ->where('equipped_pickaxe.mining_power', 600),
         );
 });
 
@@ -118,5 +119,75 @@ test('dashboard shows null node when all nodes are respawning', function () {
             fn ($page) => $page
                 ->component('Dashboard')
                 ->where('current_node', null),
+        );
+});
+
+test('dashboard fills 100 stamina in 10 seconds at base regen without equipment bonus', function () {
+    $user = User::factory()->create();
+
+    Item::query()
+        ->where('player_id', $user->id)
+        ->where('target_slot', 'pickaxe')
+        ->update(['equipped' => false]);
+
+    Item::create([
+        'player_id' => $user->id,
+        'name' => 'Training Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 1,
+        'mining_speed_bonus' => 100,
+        'mining_dmg_bonus' => 5,
+        'luck_bonus' => 0,
+        'stamina_regen_bonus' => 0.0,
+        'equipped' => true,
+        'created_at' => now(),
+    ]);
+
+    $user->stats()->update([
+        'stamina' => 0.0,
+        'stamina_last_updated_at' => now()->subSeconds(10),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('Dashboard')
+                ->where('player_stats.stamina', 100),
+        );
+});
+
+test('dashboard adds equipped stamina regen bonus to the 10 per second base', function () {
+    $user = User::factory()->create();
+
+    Item::query()
+        ->where('player_id', $user->id)
+        ->where('target_slot', 'pickaxe')
+        ->update(['equipped' => false]);
+
+    Item::create([
+        'player_id' => $user->id,
+        'name' => 'Swift Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 2,
+        'mining_speed_bonus' => 110,
+        'mining_dmg_bonus' => 8,
+        'luck_bonus' => 0,
+        'stamina_regen_bonus' => 1.5,
+        'equipped' => true,
+        'created_at' => now(),
+    ]);
+
+    $user->stats()->update([
+        'stamina' => 0.0,
+        'stamina_last_updated_at' => now()->subSeconds(5),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('Dashboard')
+                ->where('player_stats.stamina', 57.5),
         );
 });

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Item;
 use App\Models\Pickaxe;
 use Illuminate\Database\Seeder;
 
@@ -14,7 +15,7 @@ class PickaxeSeeder extends Seeder
                 'name' => 'Wooden Pickaxe',
                 'rarity' => 'common',
                 'price' => 0,
-                'power' => 10,
+                'power' => 15,
                 'luck_boost' => 0,
                 'stamina_regen_bonus' => 0.1,
                 'speed_modifier' => 1.00,
@@ -25,7 +26,7 @@ class PickaxeSeeder extends Seeder
                 'name' => 'Stone Pickaxe',
                 'rarity' => 'uncommon',
                 'price' => 500,
-                'power' => 25,
+                'power' => 40,
                 'luck_boost' => 5,
                 'stamina_regen_bonus' => 0.3,
                 'speed_modifier' => 1.20,
@@ -36,7 +37,7 @@ class PickaxeSeeder extends Seeder
                 'name' => 'Iron Pickaxe',
                 'rarity' => 'rare',
                 'price' => 2500,
-                'power' => 60,
+                'power' => 100,
                 'luck_boost' => 10,
                 'stamina_regen_bonus' => 0.6,
                 'speed_modifier' => 1.50,
@@ -47,7 +48,7 @@ class PickaxeSeeder extends Seeder
                 'name' => 'Steel Pickaxe',
                 'rarity' => 'epic',
                 'price' => 10000,
-                'power' => 150,
+                'power' => 250,
                 'luck_boost' => 20,
                 'stamina_regen_bonus' => 1.0,
                 'speed_modifier' => 1.80,
@@ -58,7 +59,7 @@ class PickaxeSeeder extends Seeder
                 'name' => 'Mythril Pickaxe',
                 'rarity' => 'legendary',
                 'price' => 50000,
-                'power' => 400,
+                'power' => 600,
                 'luck_boost' => 35,
                 'stamina_regen_bonus' => 1.5,
                 'speed_modifier' => 2.20,
@@ -72,6 +73,13 @@ class PickaxeSeeder extends Seeder
                 ['name' => $pickaxe['name']],
                 $pickaxe,
             );
+
+            Item::query()
+                ->where('target_slot', 'pickaxe')
+                ->where('name', $pickaxe['name'])
+                ->update([
+                    'mining_dmg_bonus' => $pickaxe['power'],
+                ]);
         }
     }
 }
