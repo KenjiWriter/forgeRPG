@@ -19,6 +19,7 @@ interface ShopItem {
     name: string;
     rarity: string;
     mining_power: number;
+    mining_speed: number;
     luck_bonus: number;
     stamina_regen_bonus: number;
     buy_price: number;
@@ -164,6 +165,7 @@ async function purchaseItem(item: ShopItem): Promise<void> {
 
                     <div class="space-y-1 text-sm text-slate-200">
                         <p>+{{ item.mining_power }} Mining Power</p>
+                        <p>{{ item.mining_speed.toFixed(2) }}x Mining Speed</p>
                         <p>+{{ item.luck_bonus }} Luck</p>
                         <p>+{{ item.stamina_regen_bonus.toFixed(1) }}/s Stamina Regen</p>
                         <p>Requires Level {{ item.min_level }}</p>

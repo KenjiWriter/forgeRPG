@@ -33,6 +33,7 @@ class UserObserver
             'name' => 'Wooden Pickaxe',
             'target_slot' => 'pickaxe',
             'forge_grade' => 1,
+            'mining_speed_bonus' => (int) round(($woodenPickaxe?->speed_modifier ?? 1.0) * 100),
             'mining_dmg_bonus' => $woodenPickaxe?->power ?? 5,
             'luck_bonus' => $woodenPickaxe?->luck_boost ?? 0,
             'stamina_regen_bonus' => $woodenPickaxe?->stamina_regen_bonus ?? 0,

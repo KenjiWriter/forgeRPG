@@ -38,6 +38,7 @@ export interface InventoryEquipSuccessPayload {
         id: string;
         name: string;
         mining_power: number;
+        mining_speed: number;
         luck_bonus: number;
         stamina_regen_bonus: number;
     } | null;
@@ -243,6 +244,7 @@ async function equipItem(): Promise<void> {
                 id: string;
                 name: string;
                 mining_power: number;
+                mining_speed: number;
                 luck_bonus: number;
                 stamina_regen_bonus: number;
             } | null;

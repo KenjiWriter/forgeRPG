@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Island;
+use App\Models\Item;
 use App\Models\MiningNode;
 use App\Models\NodeType;
 use App\Models\User;
@@ -31,6 +32,7 @@ test('dashboard passes player data to the view', function () {
                     ->where('level', 3)
                     ->where('experience', 250)
                     ->has('next_level_exp')
+                    ->etc()
                 )
                 ->has('player_stats', fn ($stats) => $stats
                     ->has('stamina')
@@ -39,6 +41,36 @@ test('dashboard passes player data to the view', function () {
                 )
                 ->has('inventory')
                 ->has('equipped_pickaxe'),
+        );
+});
+
+test('dashboard includes equipped pickaxe mining speed multiplier', function () {
+    $user = User::factory()->create();
+
+    Item::query()
+        ->where('player_id', $user->id)
+        ->where('target_slot', 'pickaxe')
+        ->update(['equipped' => false]);
+
+    Item::create([
+        'player_id' => $user->id,
+        'name' => 'Stone Pickaxe',
+        'target_slot' => 'pickaxe',
+        'forge_grade' => 2,
+        'mining_speed_bonus' => 120,
+        'mining_dmg_bonus' => 25,
+        'luck_bonus' => 5,
+        'stamina_regen_bonus' => 0.3,
+        'equipped' => true,
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->component('Dashboard')
+                ->where('equipped_pickaxe.mining_speed', 1.2),
         );
 });
 

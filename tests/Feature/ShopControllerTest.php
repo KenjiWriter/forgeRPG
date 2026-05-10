@@ -95,13 +95,15 @@ test('successful purchase deducts gold and creates ownership plus inventory item
         'power' => 12,
         'luck_boost' => 5,
         'stamina_regen_bonus' => 0.2,
-        'speed_modifier' => 1.10,
+        'speed_modifier' => 1.20,
         'slots' => 1,
     ]);
 
     $response = $this->actingAs($user)
         ->postJson(route('shop.purchase', $pickaxe))
         ->assertOk();
+
+    $response->assertJsonPath('mining_speed', 1.2);
 
     $purchasedItemId = $response->json('item_id');
 
@@ -117,6 +119,7 @@ test('successful purchase deducts gold and creates ownership plus inventory item
         'id' => $purchasedItemId,
         'player_id' => $user->id,
         'target_slot' => 'pickaxe',
+        'mining_speed_bonus' => 120,
         'mining_dmg_bonus' => 12,
         'luck_bonus' => 5,
         'stamina_regen_bonus' => 0.2,

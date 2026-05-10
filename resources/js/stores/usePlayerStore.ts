@@ -5,6 +5,7 @@ interface Pickaxe {
     id: number;
     name: string;
     mining_power: number;
+    mining_speed: number;
     luck_bonus: number;
     stamina_regen_bonus: number;
 }

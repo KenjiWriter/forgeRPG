@@ -273,6 +273,7 @@ class InventoryController extends Controller
                     'id' => $equippedPickaxe->id,
                     'name' => $equippedPickaxe->name,
                     'mining_power' => $equippedPickaxe->mining_dmg_bonus,
+                    'mining_speed' => ((float) $equippedPickaxe->mining_speed_bonus) / 100,
                     'luck_bonus' => $equippedPickaxe->luck_bonus,
                     'stamina_regen_bonus' => (float) $equippedPickaxe->stamina_regen_bonus,
                 ] : null,

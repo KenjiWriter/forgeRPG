@@ -56,6 +56,7 @@ interface Pickaxe {
     id: number;
     name: string;
     mining_power: number;
+    mining_speed: number;
     luck_bonus: number;
     stamina_regen_bonus: number;
 }
@@ -199,6 +200,7 @@ const isCollecting = ref(false);
 const isCrumbling = ref(false);
 const flashNode = ref(false);
 let flyingNumberCounter = 0;
+const nextHitAllowedAt = ref(0);
 
 // Client-side stamina display — pure increment regen, no timestamp math.
 // Base regen is 3 pts/sec, then equipped pickaxe bonus is added reactively.
@@ -301,8 +303,11 @@ const hpBarColor = computed(() => {
 const powerPercent = computed(() => Math.round(displayStamina.value));
 const isLowPower = computed(() => displayStamina.value < 20);
 const totalMiningPower = computed(() => playerStore.currentPickaxe?.mining_power ?? 0);
+const miningSpeedMultiplier = computed(() => Math.max(0.1, playerStore.currentPickaxe?.mining_speed ?? 1));
+const miningHitCooldownMs = computed(() => Math.max(220, Math.round(900 / miningSpeedMultiplier.value)));
 const totalMiningLuck = computed(() => playerStore.currentPickaxe?.luck_bonus ?? 0);
 const staminaRegenLabel = computed(() => `${staminaRegenPerSecond.value.toFixed(1)}/s`);
+const miningSpeedLabel = computed(() => `${miningSpeedMultiplier.value.toFixed(2)}x`);
 
 // Character section totals
 const totalMiningPowerStats = computed(() => {
@@ -461,7 +466,16 @@ function itemBorderClass(item: InventoryItem): string {
 
 // Mining hit
 async function onNodeClick(event: MouseEvent): Promise<void> {
-    if (!node.value || node.value.is_respawning || isHitting.value || isCollecting.value || displayStamina.value < 10) {
+    const now = Date.now();
+
+    if (
+        !node.value
+        || node.value.is_respawning
+        || isHitting.value
+        || isCollecting.value
+        || displayStamina.value < 10
+        || now < nextHitAllowedAt.value
+    ) {
         return;
     }
 
@@ -470,6 +484,13 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
     const clickY = event.clientY - rect.top;
 
     isHitting.value = true;
+    nextHitAllowedAt.value = now + miningHitCooldownMs.value;
+
+    setTimeout(() => {
+        if (Date.now() >= nextHitAllowedAt.value) {
+            isHitting.value = false;
+        }
+    }, miningHitCooldownMs.value);
 
     // IMMEDIATE DRAIN — subtract 30 stamina locally on click.
     // The WS StaminaUpdated event will confirm this from the server.
@@ -510,8 +531,6 @@ async function onNodeClick(event: MouseEvent): Promise<void> {
         }
     } catch {
         // Node unavailable or stamina exhausted — server error is authoritative
-    } finally {
-        isHitting.value = false;
     }
 }
 
@@ -642,6 +661,10 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                     <span class="inline-flex items-center gap-1 text-slate-200">
                         <span aria-hidden="true">⚡</span>
                         {{ staminaRegenLabel }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-slate-200">
+                        <span aria-hidden="true">⏱️</span>
+                        {{ miningSpeedLabel }}
                     </span>
                 </div>
             </div>
