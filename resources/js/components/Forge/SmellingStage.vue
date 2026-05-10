@@ -170,31 +170,31 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="space-y-6 rounded-lg border border-slate-700 bg-slate-900 p-6">
+    <div class="space-y-6 rounded-lg p-6 medieval-card border-2 border-amber-800/50">
         <!-- Header -->
         <div>
             <div class="mb-2 flex items-center gap-2">
-                <Flame class="h-5 w-5 text-orange-500" />
-                <h2 class="text-2xl font-bold text-slate-200">Smelting Stage</h2>
+                <span class="text-3xl">🔥</span>
+                <h2 class="text-2xl font-bold text-amber-300" style="font-family: 'Cinzel', serif;">Smelting Chamber</h2>
             </div>
-            <p class="text-sm text-slate-400">
+            <p class="text-sm text-amber-100/60">
                 Work the bellows to heat the ores. Keep the bellows in the sweet spot (green zone) to maximize heat efficiency.
             </p>
         </div>
 
         <!-- Info -->
         <div class="grid grid-cols-3 gap-4">
-            <div class="rounded bg-slate-800 p-3">
-                <p class="text-xs text-slate-500">CURRENT SCORE</p>
-                <p class="text-2xl font-bold text-orange-400">{{ score }}%</p>
+            <div class="rounded-lg bg-gradient-to-br from-stone-800 to-stone-900 p-3 border border-amber-700/30">
+                <p class="text-xs text-amber-100/50">CURRENT SCORE</p>
+                <p class="text-2xl font-bold text-amber-300">{{ score }}%</p>
             </div>
-            <div class="rounded bg-slate-800 p-3">
-                <p class="text-xs text-slate-500">TIME IN SWEET SPOT</p>
-                <p class="text-2xl font-bold text-green-400">{{ Math.round(timeInSweetSpot / 1000) }}s</p>
+            <div class="rounded-lg bg-gradient-to-br from-stone-800 to-stone-900 p-3 border border-amber-700/30">
+                <p class="text-xs text-amber-100/50">TIME IN SWEET SPOT</p>
+                <p class="text-2xl font-bold text-green-300">{{ Math.round(timeInSweetSpot / 1000) }}s</p>
             </div>
-            <div class="rounded bg-slate-800 p-3">
-                <p class="text-xs text-slate-500">HEAT LEVEL</p>
-                <p class="text-2xl font-bold text-red-400">{{ Math.round(heat) }}%</p>
+            <div class="rounded-lg bg-gradient-to-br from-stone-800 to-stone-900 p-3 border border-amber-700/30">
+                <p class="text-xs text-amber-100/50">HEAT LEVEL</p>
+                <p class="text-2xl font-bold text-red-400">{{ Math.round(heat) }}°</p>
             </div>
         </div>
 

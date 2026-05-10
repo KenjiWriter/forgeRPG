@@ -24,29 +24,18 @@ interface InventoryItem {
 
 interface ForgeCraftedItem {
     id: string;
-    name: string;
-    target_slot: string;
-    forge_grade: number;
-    rarity?: string;
-    image_path?: string;
-    hp_bonus: number;
-    attack_bonus: number;
-    defense_bonus: number;
-    mining_speed_bonus: number;
-    attack_speed_bonus: number;
-    dodge_bonus: number;
     final_stats: Record<string, number>;
 }
-
-const props = defineProps<{
-    inventory: InventoryItem[];
-}>();
 
 defineOptions({
     layout: {
         breadcrumbs: [{ title: 'Forge', href: forge() }],
     },
 });
+
+const props = defineProps<{
+    inventory: InventoryItem[];
+}>();
 
 // State machine: 'selection' | 'smelting' | 'smithing' | 'quenching' | 'result'
 const stage = ref<'selection' | 'smelting' | 'smithing' | 'quenching' | 'result'>('selection');
@@ -80,51 +69,34 @@ const currentStageLabel = computed(() => {
     return labels[stage.value];
 });
 
-// Handle ore selection completion
-function onOreSelectionComplete(
-    sessionId: string,
-    ores: OreInput[],
-    slot: string
-) {
+function onOreSelectionComplete(sessionId: string, ores: OreInput[], slot: string) {
     const totalSelectedOres = ores.reduce((sum, ore) => sum + ore.quantity, 0);
-    if (totalSelectedOres !== 3) {
-        return;
-    }
-
+    if (totalSelectedOres !== 3) return;
     forgeSessionId.value = sessionId;
     selectedOres.value = ores;
     targetSlot.value = slot;
     stage.value = 'smelting';
 }
 
-// Handle smelting stage completion
 function onSmeltingComplete(score: number) {
     smeltingScore.value = score;
     stage.value = 'smithing';
 }
 
-// Handle smithing stage completion
 function onSmithingComplete(score: number) {
     smithingScore.value = score;
     stage.value = 'quenching';
 }
 
-// Handle quenching stage completion
 async function onQuenchingComplete(score: number) {
     quenchScore.value = score;
     completionError.value = '';
-
     if (!forgeSessionId.value) {
         completionError.value = 'Forge session is missing. Please restart forging.';
         return;
     }
-
-    if (isCompletingForge.value) {
-        return;
-    }
-
+    if (isCompletingForge.value) return;
     isCompletingForge.value = true;
-
     try {
         const response = await axios.post(forgeComplete.url(), {
             forge_session_id: forgeSessionId.value,
@@ -132,17 +104,12 @@ async function onQuenchingComplete(score: number) {
             smithing_score: smithingScore.value,
             quench_score: quenchScore.value,
             item_name: itemName.value || `Forged ${targetSlot.value}`,
-        }, {
-            withCredentials: true,
-            withXSRFToken: true,
-        });
-
+        }, { withCredentials: true, withXSRFToken: true });
         const data = response.data as {
             item: ForgeCraftedItem;
             grade: number;
             combined_score: number;
         };
-
         resultItem.value = data.item;
         resultGrade.value = data.grade;
         resultCombinedScore.value = data.combined_score;
@@ -157,15 +124,10 @@ async function onQuenchingComplete(score: number) {
     } finally {
         isCompletingForge.value = false;
     }
-
-    if (!resultItem.value) {
-        return;
-    }
-
+    if (!resultItem.value) return;
     stage.value = 'result';
 }
 
-// Handle completion/return to selection
 function onReturnToSelection() {
     stage.value = 'selection';
     forgeSessionId.value = '';
@@ -186,75 +148,75 @@ function onReturnToSelection() {
 <template>
     <Head title="Forge" />
 
-    <div class="min-h-screen bg-slate-950">
-        <div class="mx-auto max-w-4xl px-4 py-8">
-            <!-- Header -->
-            <div class="mb-8">
-                <h1 class="text-4xl font-bold text-amber-400">Forge Engine</h1>
-                <p class="mt-2 text-slate-400">
-                    Combine ores to craft powerful equipment. Three stages await: Smelting, Smithing, and Quenching.
-                </p>
+    <div class="min-h-screen bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 p-4 sm:p-6">
+        <!-- Medieval Forge Header -->
+        <div class="mb-12 forge-border rounded-lg p-6 forge-corner">
+            <div class="flex items-center gap-4">
+                <div class="text-5xl">🔨</div>
+                <div>
+                    <h1 class="font-bold text-amber-400" style="font-family: 'Cinzel', serif; font-size: 2.5rem; letter-spacing: 0.05em;">The Blacksmith's Forge</h1>
+                    <p class="mt-2 text-amber-100/70">
+                        Combine raw ore with skill to forge legendary equipment. Each stage tests your craftsmanship.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-8">
+            <ForgeProgress :current-stage="stage" :smelting-score="smeltingScore" :smithing-score="smithingScore" :quench-score="quenchScore" />
+        </div>
+
+        <!-- Main Content -->
+        <div class="medieval-card rounded-lg border-2 border-amber-800/50 p-6">
+            <!-- Ore Selection Stage -->
+            <OreSelector
+                v-if="stage === 'selection'"
+                :inventory="inventory"
+                @selection-complete="onOreSelectionComplete"
+            />
+
+            <!-- Smelting Stage -->
+            <SmellingStage
+                v-if="stage === 'smelting'"
+                @complete="onSmeltingComplete"
+            />
+
+            <!-- Smithing Stage -->
+            <SmithingStage
+                v-if="stage === 'smithing'"
+                @complete="onSmithingComplete"
+            />
+
+            <!-- Quenching Stage -->
+            <QuenchingStage
+                v-if="stage === 'quenching'"
+                @complete="onQuenchingComplete"
+            />
+
+            <!-- Item Crafted Result -->
+            <ItemCrafted
+                v-if="stage === 'result' && resultItem"
+                :item="resultItem"
+                :grade="resultGrade"
+                :combined-score="resultCombinedScore"
+                :item-name="itemName"
+                @return-to-selection="onReturnToSelection"
+            />
+
+            <!-- Error Message -->
+            <div
+                v-if="completionError"
+                class="rounded-lg border-2 border-red-700 bg-red-900/30 p-4 text-sm text-red-300 font-medium"
+            >
+                ❌ {{ completionError }}
             </div>
 
-            <!-- Progress Tracker -->
-            <ForgeProgress :current-stage="stage" :smelting-score="smeltingScore" :smithing-score="smithingScore" :quench-score="quenchScore" />
-
-            <!-- Content Area -->
-            <div class="mt-8">
-                <!-- Ore Selection -->
-                <OreSelector
-                    v-if="stage === 'selection'"
-                    :inventory="inventory"
-                    @selection-complete="onOreSelectionComplete"
-                />
-
-                <!-- Smelting Stage -->
-                <SmellingStage
-                    v-else-if="stage === 'smelting'"
-                    :selected-ores="selectedOres"
-                    @complete="onSmeltingComplete"
-                />
-
-                <!-- Smithing Stage -->
-                <SmithingStage
-                    v-else-if="stage === 'smithing'"
-                    :selected-ores="selectedOres"
-                    @complete="onSmithingComplete"
-                />
-
-                <!-- Quenching Stage -->
-                <QuenchingStage
-                    v-else-if="stage === 'quenching'"
-                    :selected-ores="selectedOres"
-                    @complete="onQuenchingComplete"
-                />
-
-                <div
-                    v-if="stage === 'quenching' && completionError"
-                    class="mt-4 rounded border border-red-600/50 bg-red-900/20 p-3 text-sm text-red-400"
-                >
-                    {{ completionError }}
-                </div>
-
-                <div
-                    v-if="stage === 'quenching' && isCompletingForge"
-                    class="mt-4 rounded border border-cyan-600/40 bg-cyan-900/20 p-3 text-sm text-cyan-300"
-                >
-                    Forging final item...
-                </div>
-
-                <!-- Item Crafted Result -->
-                <ItemCrafted
-                    v-else-if="stage === 'result' && resultItem"
-                    :forge-session-id="forgeSessionId"
-                    :item="resultItem"
-                    :grade="resultGrade"
-                    :combined-score="resultCombinedScore"
-                    :smelting-score="smeltingScore"
-                    :smithing-score="smithingScore"
-                    :quench-score="quenchScore"
-                    @return-to-selection="onReturnToSelection"
-                />
+            <!-- Loading State -->
+            <div
+                v-if="isCompletingForge && stage === 'quenching'"
+                class="rounded-lg border-2 border-amber-700 bg-amber-900/30 p-4 text-center text-amber-300 font-semibold"
+            >
+                ⚔️ Completing your forge...
             </div>
         </div>
     </div>

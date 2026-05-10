@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { Flame, Hammer, Droplet, CheckCircle } from 'lucide-vue-next';
-
 interface Props {
     currentStage: 'selection' | 'smelting' | 'smithing' | 'quenching' | 'result';
     smeltingScore?: number;
@@ -15,63 +13,75 @@ withDefaults(defineProps<Props>(), {
 });
 
 const stages = [
-    { id: 'smelting', label: 'Smelting', icon: Flame },
-    { id: 'smithing', label: 'Smithing', icon: Hammer },
-    { id: 'quenching', label: 'Quenching', icon: Droplet },
-    { id: 'result', label: 'Complete', icon: CheckCircle },
+    { id: 'selection', label: 'Selection', emoji: '🪣' },
+    { id: 'smelting', label: 'Smelting', emoji: '🔥' },
+    { id: 'smithing', label: 'Smithing', emoji: '⚒️' },
+    { id: 'quenching', label: 'Quenching', emoji: '💧' },
 ];
+
+const stageOrder = ['selection', 'smelting', 'smithing', 'quenching', 'result'];
 </script>
 
 <template>
-    <div class="space-y-4">
-        <!-- Stage Progress Dots -->
-        <div class="flex items-center justify-between gap-2">
-            <div v-for="(stage, index) in stages" :key="stage.id" class="flex flex-1 items-center gap-2">
+    <div class="space-y-6 rounded-lg p-6 medieval-card border-2 border-amber-800/50">
+        <!-- Header -->
+        <div class="flex items-center gap-2 mb-4">
+            <span class="text-2xl">📋</span>
+            <h2 class="text-lg font-bold text-amber-300" style="font-family: 'Cinzel', serif;">Forge Progress</h2>
+        </div>
+
+        <!-- Stage Progress Indicators -->
+        <div class="flex items-center justify-between gap-1">
+            <template v-for="(stage, index) in stages" :key="stage.id">
                 <!-- Stage Indicator -->
                 <div
                     :class="[
-                        'flex h-10 w-10 items-center justify-center rounded-full transition',
-                        ['smelting', 'smithing', 'quenching', 'result'].indexOf(currentStage) >= index
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-700 text-slate-400',
+                        'flex h-12 w-12 items-center justify-center rounded-full transition relative border-2',
+                        stageOrder.indexOf(currentStage) >= index
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white border-amber-300 shadow-lg'
+                            : 'bg-stone-800 text-stone-500 border-stone-700',
                     ]"
                 >
-                    <component :is="stage.icon" class="h-5 w-5" />
+                    <span class="text-lg">{{ stage.emoji }}</span>
+                    <div
+                        v-if="stageOrder.indexOf(currentStage) >= index"
+                        class="absolute inset-0 rounded-full animate-pulse border-2 border-amber-400/30"
+                    />
                 </div>
 
                 <!-- Connector Line -->
                 <div
                     v-if="index < stages.length - 1"
                     :class="[
-                        'flex-1 h-0.5 transition',
-                        ['smelting', 'smithing', 'quenching', 'result'].indexOf(currentStage) > index
-                            ? 'bg-amber-500'
-                            : 'bg-slate-700',
+                        'flex-1 h-1 transition',
+                        stageOrder.indexOf(currentStage) > index
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg'
+                            : 'bg-stone-700',
                     ]"
                 />
-            </div>
+            </template>
         </div>
 
         <!-- Stage Labels and Scores -->
-        <div class="grid grid-cols-4 gap-2 text-center text-sm">
+        <div class="grid grid-cols-4 gap-3">
             <div
                 v-for="(stage, index) in stages"
                 :key="`label-${stage.id}`"
                 :class="[
-                    'rounded px-2 py-1 transition',
-                    ['smelting', 'smithing', 'quenching', 'result'].indexOf(currentStage) >= index
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : 'bg-slate-800 text-slate-500',
+                    'rounded-lg px-3 py-3 transition text-center text-sm font-semibold border-2',
+                    stageOrder.indexOf(currentStage) >= index
+                        ? 'bg-gradient-to-b from-amber-600/30 to-orange-600/20 text-amber-300 border-amber-700'
+                        : 'bg-stone-900/50 text-stone-500 border-stone-700',
                 ]"
             >
                 <p class="font-medium">{{ stage.label }}</p>
-                <p v-if="stage.id === 'smelting' && smeltingScore > 0" class="text-xs text-amber-300">
+                <p v-if="stage.id === 'smelting' && smeltingScore > 0" class="text-xs text-amber-200">
                     {{ smeltingScore }}%
                 </p>
-                <p v-else-if="stage.id === 'smithing' && smithingScore > 0" class="text-xs text-amber-300">
+                <p v-else-if="stage.id === 'smithing' && smithingScore > 0" class="text-xs text-amber-200">
                     {{ smithingScore }}%
                 </p>
-                <p v-else-if="stage.id === 'quenching' && quenchScore > 0" class="text-xs text-amber-300">
+                <p v-else-if="stage.id === 'quenching' && quenchScore > 0" class="text-xs text-amber-200">
                     {{ quenchScore }}%
                 </p>
             </div>

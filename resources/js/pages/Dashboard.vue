@@ -331,6 +331,9 @@ const totalDefense = computed(() => {
     if (equipment.value.helmet) {
         armorBonus += equipment.value.helmet.defense_bonus ?? 0;
     }
+    if (equipment.value.pants) {
+        armorBonus += equipment.value.pants.defense_bonus ?? 0;
+    }
 
     return baseDef + armorBonus;
 });
@@ -345,6 +348,9 @@ const totalHP = computed(() => {
     }
     if (equipment.value.helmet) {
         hpBonus += equipment.value.helmet.hp_bonus ?? 0;
+    }
+    if (equipment.value.pants) {
+        hpBonus += equipment.value.pants.hp_bonus ?? 0;
     }
     if (equipment.value.pickaxe) {
         hpBonus += equipment.value.pickaxe.hp_bonus ?? 0;
@@ -383,6 +389,9 @@ const totalDodgeChance = computed(() => {
 
     if (equipment.value.armor) {
         dodgeBonus += equipment.value.armor.dodge_bonus ?? 0;
+    }
+    if (equipment.value.pants) {
+        dodgeBonus += equipment.value.pants.dodge_bonus ?? 0;
     }
     if (equipment.value.boots) {
         dodgeBonus += equipment.value.boots.dodge_bonus ?? 0;
@@ -771,7 +780,7 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
                                     <div
                                         v-for="item in inventory"
                                         :key="item.inventory_id"
-                                        class="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 bg-muted/40 p-1.5 text-center transition-all hover:bg-muted/70"
+                                        class="relative flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 bg-muted/40 p-1.5 text-center transition-all hover:bg-muted/70 pointer-events-auto"
                                         :class="[
                                             itemBorderClass(item),
                                             item.is_equipped && 'ring-2 ring-emerald-500/60 ring-offset-2 ring-offset-slate-800'
@@ -813,9 +822,9 @@ async function collectDestroyedNode(nodeId: number): Promise<void> {
 
                             <div class="space-y-2">
                                 <div
-                                    v-for="slot in ['helmet', 'armor', 'pickaxe']"
+                                    v-for="slot in ['helmet', 'armor', 'pants', 'boots', 'weapon', 'pickaxe']"
                                     :key="slot"
-                                    class="group flex items-center justify-between rounded-md border border-slate-700/50 bg-slate-900/30 p-2 transition-all cursor-pointer"
+                                    class="group flex items-center justify-between rounded-md border border-slate-700/50 bg-slate-900/30 p-2 transition-all cursor-pointer pointer-events-auto"
                                     :class="equipment[slot] && 'hover:bg-slate-900/60 hover:border-slate-600/80 hover:ring-1 hover:ring-slate-600/40'"
                                     @mouseenter="equipment[slot] && showTooltip(getInventoryItemForEquipped(equipment[slot]!)!, $event)"
                                     @mouseleave="scheduleHide()"

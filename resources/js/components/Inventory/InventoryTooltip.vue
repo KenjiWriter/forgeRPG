@@ -322,13 +322,18 @@ const tooltipStyle = computed(() => {
     }
     left = Math.max(MARGIN, Math.min(left, vw - TOOLTIP_W - MARGIN));
     top = Math.max(MARGIN, top);
-    return { left: `${left}px`, top: `${top}px`, width: `${TOOLTIP_W}px` };
+    return {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${TOOLTIP_W}px`,
+        pointerEvents: 'auto' as const,
+    };
 });
 </script>
 
 <template>
     <div
-        class="fixed z-50 rounded-xl border-2 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-sm"
+        class="fixed z-[9999] rounded-xl border-2 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-sm pointer-events-auto"
         :class="borderClass"
         :style="tooltipStyle"
     >
@@ -393,7 +398,7 @@ const tooltipStyle = computed(() => {
                 v-model.number="sellQuantity"
                 type="number"
                 inputmode="numeric"
-                class="mb-2 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white"
+                class="mb-2 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white pointer-events-auto"
                 :min="1"
                 :max="maxSellQuantity"
                 @input="clampSellQuantity"
@@ -402,7 +407,7 @@ const tooltipStyle = computed(() => {
             <input
                 v-model.number="sellQuantity"
                 type="range"
-                class="mb-2 w-full"
+                class="mb-2 w-full pointer-events-auto"
                 :min="1"
                 :max="maxSellQuantity"
                 step="1"

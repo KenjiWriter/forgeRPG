@@ -59,6 +59,15 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+
+    --color-gold: var(--gold);
+    --color-gold-light: var(--gold-light);
+    --color-gold-dark: var(--gold-dark);
+    --color-burnt-orange: var(--burnt-orange);
+    --color-deep-red: var(--deep-red);
+    --color-stone-dark: var(--stone-dark);
+    --color-stone-light: var(--stone-light);
+    --color-forged-iron: var(--forged-iron);
 }
 
 /*
@@ -70,6 +79,7 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
+
     *,
     ::after,
     ::before,
@@ -80,6 +90,7 @@
 }
 
 @layer utilities {
+
     body,
     html {
         --font-sans:
@@ -89,7 +100,219 @@
     }
 }
 
+@layer base {
+
+    /* Medieval header styles */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: 'Cinzel', serif;
+        letter-spacing: 0.05em;
+    }
+
+    h1 {
+        @apply text-amber-400 drop-shadow-lg;
+    }
+
+    h2 {
+        @apply text-amber-300;
+    }
+}
+
+/* Medieval animations */
+@keyframes glow-pulse {
+
+    0%,
+    100% {
+        text-shadow: 0 0 10px rgba(180, 83, 9, 0.5), 0 0 20px rgba(180, 83, 9, 0.3);
+    }
+
+    50% {
+        text-shadow: 0 0 20px rgba(180, 83, 9, 0.8), 0 0 30px rgba(180, 83, 9, 0.5);
+    }
+}
+
+@keyframes forge-spark {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(var(--tx), var(--ty)) scale(0);
+    }
+}
+
+@keyframes energy-vial-glow {
+
+    0%,
+    100% {
+        box-shadow: inset 0 0 10px rgba(217, 119, 6, 0.4), 0 0 15px rgba(245, 158, 11, 0.3);
+    }
+
+    50% {
+        box-shadow: inset 0 0 20px rgba(217, 119, 6, 0.6), 0 0 25px rgba(245, 158, 11, 0.5);
+    }
+}
+
+@keyframes hammer-strike {
+
+    0%,
+    100% {
+        transform: translateY(0) scaleY(1);
+    }
+
+    50% {
+        transform: translateY(4px) scaleY(1.1);
+    }
+}
+
+@layer utilities {
+
+    /* Forged Iron Border Styles */
+    .forge-border {
+        @apply border-2 border-amber-700;
+        box-shadow:
+            inset 0 1px 0 rgba(217, 119, 6, 0.3),
+            0 4px 6px rgba(0, 0, 0, 0.7);
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
+    }
+
+    /* Decorative Iron Corners */
+    .forge-corner {
+        @apply relative;
+    }
+
+    .forge-corner::before,
+    .forge-corner::after {
+        content: '';
+        @apply absolute w-3 h-3 border-amber-700 bg-gradient-to-br from-amber-800 to-amber-900;
+        box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    .forge-corner::before {
+        @apply top-0 left-0 border-t-2 border-l-2;
+    }
+
+    .forge-corner::after {
+        @apply bottom-0 right-0 border-b-2 border-r-2;
+    }
+
+    /* Medieval Gold Glow */
+    .gold-glow {
+        @apply text-amber-400;
+        animation: glow-pulse 2s ease-in-out infinite;
+    }
+
+    /* Energy Vial (Stamina) */
+    .energy-vial {
+        @apply relative overflow-hidden rounded-lg bg-gradient-to-b from-amber-600 to-amber-900 border border-amber-700;
+        animation: energy-vial-glow 3s ease-in-out infinite;
+    }
+
+    .energy-vial-cap {
+        @apply absolute top-0 left-0 right-0 h-2 bg-gradient-to-b from-stone-400 to-stone-600 border-b border-amber-800;
+        box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.2);
+    }
+
+    .energy-vial-fill {
+        @apply absolute inset-0 bg-gradient-to-t from-orange-500 via-amber-400 to-amber-300 rounded-lg;
+        opacity: 0.8;
+    }
+
+    /* Furnace/Anvil Area */
+    .anvil-surface {
+        @apply bg-gradient-to-b from-stone-700 to-stone-900 rounded-lg;
+        box-shadow:
+            inset 0 2px 4px rgba(0, 0, 0, 0.8),
+            0 4px 12px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Hammer Strike Effect */
+    .hammer-strike {
+        animation: hammer-strike 0.6s ease-in-out;
+    }
+
+    /* Furnace Glow */
+    .furnace-glow {
+        @apply bg-gradient-to-b from-orange-600 via-red-700 to-stone-900;
+        box-shadow:
+            inset 0 0 30px rgba(239, 68, 68, 0.4),
+            0 0 30px rgba(239, 68, 68, 0.2);
+    }
+
+    /* Leather Scroll/Parchment */
+    .parchment-scroll {
+        @apply bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg;
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Medieval Card */
+    .medieval-card {
+        @apply bg-gradient-to-br from-stone-800 to-stone-900 rounded-lg border border-amber-800/50 p-4;
+        box-shadow:
+            0 8px 16px rgba(0, 0, 0, 0.7),
+            inset 0 1px 0 rgba(217, 119, 6, 0.2);
+    }
+
+    /* Rarity Badge - Magical Rune Style */
+    .rune-badge {
+        @apply inline-flex items-center justify-center px-3 py-1 rounded-lg font-semibold text-sm;
+        font-family: 'MedievalSharp', cursive;
+        letter-spacing: 0.05em;
+        box-shadow: 0 0 8px currentColor;
+    }
+
+    .rune-badge-common {
+        @apply bg-stone-600 text-stone-200;
+    }
+
+    .rune-badge-uncommon {
+        @apply bg-green-700 text-green-100;
+    }
+
+    .rune-badge-rare {
+        @apply bg-blue-700 text-blue-100;
+    }
+
+    .rune-badge-epic {
+        @apply bg-purple-700 text-purple-100;
+    }
+
+    .rune-badge-legendary {
+        @apply bg-gradient-to-r from-amber-600 to-orange-600 text-amber-50;
+    }
+
+    /* Bucket of Raw Materials */
+    .ore-bucket {
+        @apply relative bg-gradient-to-b from-amber-900 to-stone-900 rounded-lg border-2 border-amber-700;
+        box-shadow:
+            inset -2px -2px 4px rgba(0, 0, 0, 0.8),
+            0 4px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    .ore-bucket::before {
+        content: '';
+        @apply absolute -top-2 left-1/2 w-12 h-2 bg-gradient-to-b from-stone-600 to-stone-700 rounded-full;
+        transform: translateX(-50%);
+    }
+
+    /* Blueprint/Scroll Background */
+    .blueprint-bg {
+        @apply bg-gradient-to-br from-blue-900 via-blue-950 to-slate-900 rounded-lg;
+        background-image:
+            linear-gradient(0deg, rgba(120, 113, 108, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(120, 113, 108, 0.1) 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+}
+
 :root {
+    /* Light mode (minimal, as app is dark-mode focused) */
     --background: hsl(0 0% 100%);
     --foreground: hsl(0 0% 3.9%);
     --card: hsl(0 0% 100%);
@@ -124,48 +347,70 @@
     --sidebar-border: hsl(0 0% 91%);
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(0 0% 98%);
+
+    /* Medieval colors */
+    --gold: hsl(45 95% 50%);
+    --gold-light: hsl(45 90% 65%);
+    --gold-dark: hsl(45 85% 35%);
+    --burnt-orange: hsl(25 95% 40%);
+    --deep-red: hsl(0 85% 35%);
+    --stone-dark: hsl(0 0% 18%);
+    --stone-light: hsl(0 0% 35%);
+    --forged-iron: hsl(0 0% 25%);
 }
 
 .dark {
-    --background: hsl(0 0% 3.9%);
-    --foreground: hsl(0 0% 98%);
-    --card: hsl(0 0% 3.9%);
-    --card-foreground: hsl(0 0% 98%);
-    --popover: hsl(0 0% 3.9%);
-    --popover-foreground: hsl(0 0% 98%);
-    --primary: hsl(0 0% 98%);
-    --primary-foreground: hsl(0 0% 9%);
-    --secondary: hsl(0 0% 14.9%);
-    --secondary-foreground: hsl(0 0% 98%);
-    --muted: hsl(0 0% 16.08%);
-    --muted-foreground: hsl(0 0% 63.9%);
-    --accent: hsl(0 0% 14.9%);
-    --accent-foreground: hsl(0 0% 98%);
-    --destructive: hsl(0 84% 60%);
+    /* Medieval Dark Mode */
+    --background: hsl(30 20% 12%);
+    --foreground: hsl(45 80% 85%);
+    --card: hsl(0 0% 15%);
+    --card-foreground: hsl(45 85% 80%);
+    --popover: hsl(0 0% 12%);
+    --popover-foreground: hsl(45 80% 85%);
+    --primary: hsl(45 95% 50%);
+    --primary-foreground: hsl(0 0% 10%);
+    --secondary: hsl(25 95% 40%);
+    --secondary-foreground: hsl(0 0% 95%);
+    --muted: hsl(0 0% 30%);
+    --muted-foreground: hsl(45 50% 60%);
+    --accent: hsl(0 85% 35%);
+    --accent-foreground: hsl(0 0% 95%);
+    --destructive: hsl(0 85% 35%);
     --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 14.9%);
-    --input: hsl(0 0% 14.9%);
-    --ring: hsl(0 0% 83.1%);
-    --chart-1: hsl(220 70% 50%);
-    --chart-2: hsl(160 60% 45%);
-    --chart-3: hsl(30 80% 55%);
+    --border: hsl(0 0% 25%);
+    --input: hsl(0 0% 20%);
+    --ring: hsl(45 95% 50%);
+    --chart-1: hsl(45 95% 50%);
+    --chart-2: hsl(25 95% 40%);
+    --chart-3: hsl(0 85% 35%);
     --chart-4: hsl(280 65% 60%);
     --chart-5: hsl(340 75% 55%);
-    --sidebar-background: hsl(0 0% 7%);
-    --sidebar-foreground: hsl(0 0% 95.9%);
-    --sidebar-primary: hsl(360, 100%, 100%);
-    --sidebar-primary-foreground: hsl(0 0% 100%);
-    --sidebar-accent: hsl(0 0% 15.9%);
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-    --sidebar-border: hsl(0 0% 15.9%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(240 5.9% 10%);
+    --sidebar-background: hsl(30 25% 8%);
+    --sidebar-foreground: hsl(45 80% 85%);
+    --sidebar-primary: hsl(45 95% 50%);
+    --sidebar-primary-foreground: hsl(0 0% 10%);
+    --sidebar-accent: hsl(25 95% 40%);
+    --sidebar-accent-foreground: hsl(0 0% 95%);
+    --sidebar-border: hsl(0 0% 25%);
+    --sidebar-ring: hsl(45 95% 50%);
+    --sidebar: hsl(30 25% 8%);
 }
+
+/* Medieval colors in dark mode */
+--gold: hsl(45 95% 50%);
+--gold-light: hsl(45 90% 65%);
+--gold-dark: hsl(45 85% 35%);
+--burnt-orange: hsl(25 95% 40%);
+--deep-red: hsl(0 85% 35%);
+--stone-dark: hsl(0 0% 18%);
+--stone-light: hsl(0 0% 35%);
+--forged-iron: hsl(0 0% 25%);
 
 @layer base {
     * {
         @apply border-border outline-ring/50;
     }
+
     body {
         @apply bg-background text-foreground;
     }

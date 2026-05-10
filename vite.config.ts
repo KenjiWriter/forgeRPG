@@ -15,6 +15,12 @@ export default defineConfig({
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
                 }),
+                bunny('Cinzel', {
+                    weights: [400, 700, 900],
+                }),
+                bunny('MedievalSharp', {
+                    weights: [400],
+                }),
             ],
         }),
         inertia(),
